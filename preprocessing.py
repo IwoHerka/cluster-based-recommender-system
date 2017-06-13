@@ -9,6 +9,9 @@ from infomap import infomap
 
 
 log = sys.stdout.write
+shortest_paths = {}
+avg_ratings = {}
+global_avg_rating = None
 
 
 def draw(G, partition):
@@ -30,8 +33,8 @@ def draw(G, partition):
 
     
 def load_trust(path):
-    return nx.karate_club_graph()
-#return nx.read_edgelist(path, create_using=nx.DiGraph(), nodetype=int)
+    #return nx.karate_club_graph()
+    return nx.read_edgelist(path, create_using=nx.DiGraph(), nodetype=int)
 
 
 def cluster(G):
@@ -89,54 +92,129 @@ def load_ratings(path, items):
     return ratings               
 
 
-def predict(user, item, ratings, trust_net, community):
+def predict(trust_net, trust_coms, com_id, ratings, user, item):
     rating = 0
-
-    log('        Checking neighbors for (u:{})...\n'.format(user))
+    len_sum = -1
+    weights = []
+    com_paths = []
+    com_queue = []
+    path_lengths = []
+    user2rating = None
+    paths_from_user = None
     
-    #if nbor in ratings and item in ratings[nbor]:
-    #nrating = ratings[nbor][item]
-    #log('        Found the rating in neighbor set: (u:{}, r:{})\n'.format(nbor, nrating))
+    while True:
+        com_queue.append(com_id)
+        com_id = com_id.rsplit(':', 1)[0]
+        if not ':' in com_id:
+            com_queue.append(com_id)
+            break
 
+    log('        Looking for raters... \n\n')    
+
+    for com_id in com_queue:
+        user2rating = []
+        
+        for rater in trust_coms[com_id]:
+            if rater in ratings and item in ratings[rater]:
+                user2rating.append((rater, ratings[rater][item]))
+
+        log('        [raters in {}]: {}\n'.format(com_id, len(user2rating)))
+        
+        if user2rating:
+            if len(user2rating) == 1:
+                return user2rating[0][1]
+                
+            if not com_id in shortest_paths:
+                shortest_paths[com_id] = {}
+
+            if not user in shortest_paths[com_id]:
+                subnet = nx.Graph(trust_net.subgraph(trust_coms[com_id]))
+                shortest_paths[com_id][user] = \
+                        nx.single_source_shortest_path(subnet, user) 
+                
+            paths_from_user = shortest_paths[com_id][user]
+            break
+   
+    for rater_rating in user2rating:
+        rater = rater_rating[0]
+        
+        if rater in paths_from_user:
+            path_lengths.append(len(paths_from_user[rater]) - 1)
+        else:
+            path_lengths.append(1000000)
+
+    len_sum = sum(path_lengths)
+    weight_sum = 0
+    delta = 0
+    
+    for i, rater_rating in enumerate(user2rating):
+        weights.append(1 - float(path_lengths[i]) / len_sum)
+        weight_sum += weights[i]
+
+    for i, rater_rating in enumerate(user2rating):
+        rater = rater_rating[0]
+        rating = rater_rating[1]
+        delta += float(weights[i] * (avg_ratings[rater] - rating)) / weight_sum
+
+
+    if user in avg_ratings:
+        avg_rating = avg_ratings[user]
+    else:
+        avg_rating = global_avg_rating
+        
+    return avg_rating + (delta / len(user2rating))
+            
 
 if __name__ == '__main__':
     TEST_DIR = './test_data/'
     TRUST_DAT = 'trust.dat'
     RATING_DAT = 'ratings.dat'
 
+    ratings = None
+    items = set([])
+    rating_sum = 0.
+    trust_net = None
+    com2nodes = None
+    node2come = None
+    
     log('1] Loading trust network... ')
 
-    G = load_trust('../Matlab/Networks/Gnutella.dat')#TEST_DIR + TRUST_DAT)
-    nnodes = G.number_of_nodes()
-    nedges = G.number_of_edges()
+    trust_net = load_trust('../Matlab/Networks/Gnutella.dat')#TEST_DIR + TRUST_DAT)
 
-    log('Done.\n\n    [nodes]: {}\n    [edges]: {}\n\n'.format(nnodes, nedges))
+    log('Done.\n\n    [nodes]: {}\n    [edges]: {}\n\n'.format(
+        trust_net.number_of_nodes(), trust_net.number_of_edges()))
     log('2] Clustering trust network... \n\n')
 
     start = time.time()
-    res = cluster(G)
-    com2nodes = res[0]
-    node2com = res[1]
+    tmp = cluster(trust_net)
+    com2nodes = tmp[0]
+    node2com = tmp[1]
     
     log('    (Clustering finished in: {}.)\n\n'.format(time.time() - start))
     log('3] Loading ratings data... ')
 
-    items = set([])
     ratings = load_ratings(TEST_DIR + RATING_DAT, items)
 
     log('Done.\n\n    [raters]: {}\n    [items]: {}\n\n'.format(len(ratings), len(items)))
-    log('4] Rating items... \n\n')
-
-    users = [1]
-    for user in users:
-        for item in list(items)[:10]:
-            log('    Predicting for (u:{}, i:{})... \n\n'.format(user, item))
-            
-            predict(user, item, ratings, G, node2com[user])
-
-    log('Computing shortest paths... ')
+    log('4] Calculating average ratings... ')
 
     
-        
+    for user in ratings:
+        avg_ratings[user] = float(sum(ratings[user].values())) / len(ratings[user])
+        rating_sum += avg_ratings[user]
 
+    global_avg_rating = rating_sum / len(ratings)
+
+    log('Done.\n\n5] Rating items... \n\n')
+
+    users = [i + 1 for i in range(50)]
+    for user in users:
+        for item in [101]:#list(items)[:10]:
+            log('    Predicting for (u:{}, i:{})... \n\n'.format(user, item))
+            
+            rating = predict(trust_net, com2nodes, node2com[user], ratings, user, item)
+
+            log('\n    Prediction: {}\n\n'.format(rating))
+
+    log('Computing shortest paths... ')
     log('Done in: {}.\n\n'.format(time.time() - start))    
