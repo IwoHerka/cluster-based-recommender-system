@@ -33,7 +33,6 @@ def draw(G, partition):
 
     
 def load_trust(path):
-    #return nx.karate_club_graph()
     return nx.read_edgelist(path, create_using=nx.DiGraph(), nodetype=int)
 
 
@@ -109,16 +108,19 @@ def predict(trust_net, trust_coms, com_id, ratings, user, item):
             com_queue.append(com_id)
             break
 
-    log('        Looking for raters... \n\n')    
+    #log('        Looking for raters... \n\n')    
 
     for com_id in com_queue:
         user2rating = []
         
         for rater in trust_coms[com_id]:
+            if rater == user:
+                continue
+            
             if rater in ratings and item in ratings[rater]:
                 user2rating.append((rater, ratings[rater][item]))
 
-        log('        [raters in {}]: {}\n'.format(com_id, len(user2rating)))
+        #log('        [raters in {}]: {}\n'.format(com_id, len(user2rating)))
         
         if user2rating:
             if len(user2rating) == 1:
@@ -161,8 +163,11 @@ def predict(trust_net, trust_coms, com_id, ratings, user, item):
         avg_rating = avg_ratings[user]
     else:
         avg_rating = global_avg_rating
-        
-    return avg_rating + (delta / len(user2rating))
+
+    if delta:    
+        return avg_rating + (delta / len(user2rating))
+    else:
+        return avg_rating
             
 
 if __name__ == '__main__':
@@ -179,7 +184,7 @@ if __name__ == '__main__':
     
     log('1] Loading trust network... ')
 
-    trust_net = load_trust('../Matlab/Networks/Gnutella.dat')#TEST_DIR + TRUST_DAT)
+    trust_net = load_trust(TEST_DIR + TRUST_DAT)
 
     log('Done.\n\n    [nodes]: {}\n    [edges]: {}\n\n'.format(
         trust_net.number_of_nodes(), trust_net.number_of_edges()))
@@ -207,14 +212,31 @@ if __name__ == '__main__':
 
     log('Done.\n\n5] Rating items... \n\n')
 
-    users = [i + 1 for i in range(50)]
-    for user in users:
-        for item in [101]:#list(items)[:10]:
-            log('    Predicting for (u:{}, i:{})... \n\n'.format(user, item))
+    count = 0
+    error = 0.
+    
+    for rater in ratings:
+        for item in ratings[rater]:
+            count += 1
+            prediction = predict(
+                trust_net,
+                com2nodes,
+                node2com[rater],
+                ratings,
+                rater,
+                item
+            )
+
+            if count == 10000:
+                break
+
+            error += abs(ratings[rater][item] - prediction)
+            print(rater, item)
+
+        if count == 10000:
+            break
             
-            rating = predict(trust_net, com2nodes, node2com[user], ratings, user, item)
 
-            log('\n    Prediction: {}\n\n'.format(rating))
+    log('Done in: {}.\n\n'.format(time.time() - start))
 
-    log('Computing shortest paths... ')
-    log('Done in: {}.\n\n'.format(time.time() - start))    
+    log('     [average error]: {}\n\n'.format(error / count))
