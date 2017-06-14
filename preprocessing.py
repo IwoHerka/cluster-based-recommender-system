@@ -100,6 +100,11 @@ def predict(trust_net, trust_coms, com_id, ratings, user, item):
     path_lengths = []
     user2rating = None
     paths_from_user = None
+
+    if user in avg_ratings:
+        avg_rating = avg_ratings[user]
+    else:
+        avg_rating = global_avg_rating
     
     while True:
         com_queue.append(com_id)
@@ -124,7 +129,8 @@ def predict(trust_net, trust_coms, com_id, ratings, user, item):
         
         if user2rating:
             if len(user2rating) == 1:
-                return user2rating[0][1]
+                delta = -(avg_ratings[user2rating[0][0]] - user2rating[0][1])
+                return (round(avg_rating + delta), 1)
                 
             if not com_id in shortest_paths:
                 shortest_paths[com_id] = {}
@@ -156,19 +162,15 @@ def predict(trust_net, trust_coms, com_id, ratings, user, item):
     for i, rater_rating in enumerate(user2rating):
         rater = rater_rating[0]
         rating = rater_rating[1]
-        delta += float(weights[i] * (avg_ratings[rater] - rating)) / weight_sum
+        delta += float(weights[i] * -(avg_ratings[rater] - rating)) / weight_sum
 
-
-    if user in avg_ratings:
-        avg_rating = avg_ratings[user]
-    else:
-        avg_rating = global_avg_rating
-
+    num_raters = len(user2rating)
+        
     if delta:    
-        return avg_rating + (delta / len(user2rating))
+        return (round(avg_rating + (delta / num_raters)), num_raters)
     else:
-        return avg_rating
-            
+        return (-1, 0)
+    
 
 if __name__ == '__main__':
     TEST_DIR = './test_data/'
@@ -203,7 +205,6 @@ if __name__ == '__main__':
     log('Done.\n\n    [raters]: {}\n    [items]: {}\n\n'.format(len(ratings), len(items)))
     log('4] Calculating average ratings... ')
 
-    
     for user in ratings:
         avg_ratings[user] = float(sum(ratings[user].values())) / len(ratings[user])
         rating_sum += avg_ratings[user]
@@ -214,11 +215,11 @@ if __name__ == '__main__':
 
     count = 0
     error = 0.
+    avg_raters = 0.
     
     for rater in ratings:
         for item in ratings[rater]:
-            count += 1
-            prediction = predict(
+            res = predict(
                 trust_net,
                 com2nodes,
                 node2com[rater],
@@ -227,6 +228,14 @@ if __name__ == '__main__':
                 item
             )
 
+            prediction = res[0]
+            avg_raters += res[1]
+
+            if prediction != -1:
+                count += 1
+            else:
+                continue
+            
             if count == 10000:
                 break
 
@@ -239,4 +248,4 @@ if __name__ == '__main__':
 
     log('Done in: {}.\n\n'.format(time.time() - start))
 
-    log('     [average error]: {}\n\n'.format(error / count))
+    log('     [average error]: {}\n     [average # raters]:{}\n\n'.format(error / count, avg_raters / count))
