@@ -1,6 +1,9 @@
 import sys
 import time
+import random
 import argparse
+import operator
+from collections import defaultdict
 
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -33,7 +36,7 @@ class Recommender:
         self.trust_net = None
         self.com2nodes = None
         self.node2come = None
-        self.best = []
+        self.predictions = defaultdict(lambda: {})
 
     def round(self, n):
         assert self.round_precision
@@ -194,7 +197,7 @@ class Recommender:
                 delta += change
 
         num_raters = len(user2rating)
-        avg_distance = sum(distances) / len(distances) if distances else -1
+        avg_distance = sum(distances) / len(distances) if distances else 0
         return (self.round(avg_rating + delta), num_raters, unreachable, avg_distance)
 
     
@@ -235,7 +238,7 @@ class Recommender:
         unreachable = 0.
         raters = 0.
         avg_distance = 0.
-        histogram = [0, 0, 0, 0, 0]
+        histogram = defaultdict(lambda: -1)
 
         for rater in self.ratings:
             for item in self.ratings[rater]:
@@ -248,33 +251,60 @@ class Recommender:
                 unreachable += res[2]
                 avg_distance += res[3]
 
-                tmp = abs(self.ratings[rater][item] - prediction)
-                print(tmp)
-                histogram[int(tmp)] += 1
-                error += tmp
+                err = abs(self.ratings[rater][item] - prediction)
+                histogram[err] += 1
+                error += err
 
-                #if prediction in [5.0, 4.5]:
-                #    print(ratings[rater][item], prediction, tmp)
-                #    best.append((rater, item))
-
+                self.predictions[rater][item] = prediction
 
         log('Done in: {}.\n\n'.format(time.time() - start))
 
         log('     [average error]: {}\n' \
             '     [average # raters]: {}\n' \
-            '     [error histogram]: {}\n' \
             '     [average distance]: {}\n' \
             '     [average global rating]: {}\n' \
             '     [unreachable raters]: {}\n\n'.format(
                 error / count,
                 raters / count,
-                histogram,
                 avg_distance / count,
                 global_avg_rating,
                 unreachable / raters
             )
         )
 
+        all_ratings = 0
+        
+        for error in sorted(histogram.keys()):
+            all_ratings += histogram[error]
+            log('     [{}]: {}\n'.format(error, histogram[error]))
+
+        log('\n     [all ratings]: {}\n'.format(all_ratings))
+
+        rand_precision = 0.
+        avg_precision = 0.
+        cc = 0
+        
+        for user in self.predictions:
+            required = 10
+            top_predicted = sorted(self.predictions[user].items(),
+                             key=operator.itemgetter(1))
+            top_predicted = top_predicted[:required]
+
+            if (len(top_predicted) == required):
+                cc += 1
+                rand_sample = set(random.sample(self.items, required))
+                
+                top_predicted = set([i[0] for i in top_predicted])
+                top_real = sorted(self.ratings[user].items(),
+                              key=operator.itemgetter(1))
+                top_real = top_real[:required]
+                top_real = set([i[0] for i in top_real])
+            
+                avg_precision += len(top_real & top_predicted)
+                rand_precision += len(top_real & rand_sample)
+
+        log('     [avg top-N precision]: {}\n'.format(avg_precision / cc / required))
+        log('     [random top-N precision]: {}\n'.format(rand_precision / cc / required))    
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=
