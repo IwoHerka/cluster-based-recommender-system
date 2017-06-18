@@ -285,7 +285,7 @@ class Recommender:
         cc = 0
         
         for user in self.predictions:
-            required = 10
+            required = 25
             top_predicted = sorted(self.predictions[user].items(),
                              key=operator.itemgetter(1))
             top_predicted = top_predicted[:required]
