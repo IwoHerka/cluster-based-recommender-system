@@ -10,286 +10,275 @@ from infomap import infomap
 
 
 global silent
-shortest_paths = {}
-avg_ratings = {}
-global_avg_rating = None
-
 
 def log(msg):
     if not silent:
         sys.stdout.write(msg)
-
-        
-def draw(G, partition):
-    size = float(len(set(partition.values())))
-    pos = nx.spring_layout(G)
-    count = 0.
-
-    for com in set(partition.values()):
-        count += 1
-        list_nodes = [v for v in partition.keys() if partition[v] == com]
-        nx.draw_networkx_nodes(G,
-                               pos,
-                               list_nodes,
-                               node_size=20,
-                               node_color=plt.cm.jet(count / size))
-
-    nx.draw_networkx_edges(G, pos, alpha=0.5)
-    plt.show()
-
 
 def preprocess(path, target):
     with open(path, 'r') as src:
         with open(target, 'w') as out:
             for line in src.readlines():
                 out.write(line.rsplit(' ', 1)[0] + '\n')
+
+class Recommender:
+    def __init__(self):
+        self.round_precision = 1.0
+        self.shortest_paths = {}
+        self.avg_ratings = {}
+        self.global_avg_rating = 0
+        self.ratings = None
+        self.items = set([])
+        self.rating_sum = 0.
+        self.trust_net = None
+        self.com2nodes = None
+        self.node2come = None
+        self.best = []
+
+    def round(self, n):
+        assert self.round_precision
+        
+        correction = 0.5 if n >= 0 else -0.5
+        return int(n / self.round_precision + correction) * self.round_precision
+
     
-    
-def load_trust(path):
-    return nx.read_edgelist(path, create_using=nx.DiGraph(), nodetype=int)
+    def load_trust(self, path):
+        self.trust_net = nx.read_edgelist(path,
+                                          create_using=nx.DiGraph(),
+                                          nodetype=int)
 
-
-def cluster(G):
-    infomap_wrapper = infomap.Infomap('-d --tree --silent')
-
-    log('    1] Building Infomap network from a NetworkX graph... ')
-
-    for e in G.edges_iter():
-        infomap_wrapper.addLink(*e)
-
-    log('Done.\n    2] Finding communities with Infomap... ')
-    
-    com2nodes = {}
-    node2com = {}
-    infomap_wrapper.run()
-    tree = infomap_wrapper.tree
-    
-    for node in tree.treeIter():
-        if node.isLeaf and node.originalLeafIndex != 0:
-            cid = ''
-
-            for i in node.path():
-                cid += str(i + 1)
-                
-                if not cid in com2nodes:
-                    com2nodes[cid] = set()
-
-                # ID of the last community in a path contains
-                # information about previous communities,
-                # so we can safely override the current value.
-                node2com[node.originalLeafIndex] = cid
-                
-                com2nodes[cid].add(node.originalLeafIndex)
-
-                cid += ':'
-
-    log('Done.\n\n    [communities in total]: {}\n\n'.format(len(com2nodes)))
-    
-    return (com2nodes, node2com)
-
-
-def load_ratings(path, items):
-    ratings = {}
-    
-    with open(path, 'r') as data:
-        for line in data.readlines():
-            rating = [e for e in line.replace('\n', '').split(' ')]
-            items.add(int(rating[1]))
-
-            if not int(rating[0]) in ratings:
-                ratings[int(rating[0])] = {}
-
-            ratings[int(rating[0])][int(rating[1])] = float(rating[2])
-
-    return ratings               
-
-
-def predict(trust_net, trust_coms, com_id, ratings, user, item):
-    rating = 0
-    len_sum = -1
-    weights = []
-    unreachable = 0
-    com_paths = []
-    com_queue = []
-    distances = []
-    path_lengths = []
-    user2rating = None
-    paths_from_user = None
-
-    if user in avg_ratings:
-        avg_rating = avg_ratings[user]
-    else:
-        avg_rating = global_avg_rating
-    
-    while True:
-        com_queue.append(com_id)
-        com_id = com_id.rsplit(':', 1)[0]
-        if not ':' in com_id:
+        
+    def user_clusters(self, user):
+        assert self.node2com
+        assert user in self.node2com
+        
+        com_id = self.node2com[user]
+        com_queue = []
+        
+        while True:
             com_queue.append(com_id)
-            break
+            com_id = com_id.rsplit(':', 1)[0]
+            
+            if not ':' in com_id:
+                com_queue.append(com_id)
+                break
 
-    for com_id in com_queue:
-        user2rating = []
+        return com_queue
+
+    
+    def cluster(self):
+        assert infomap
+        assert self.trust_net
         
-        for rater in trust_coms[com_id]:
-            if rater == user:
-                continue
-
-            if rater in ratings and item in ratings[rater]:
-                user2rating.append((rater, ratings[rater][item]))
+        self.node2com = {}
+        self.com2nodes = {}
         
-        if user2rating:
-            if not com_id in shortest_paths:
-                shortest_paths[com_id] = {}
+        infomap_wrapper = infomap.Infomap('-d --tree --silent')
 
-            if not user in shortest_paths[com_id]:
-                subnet = trust_net.subgraph(trust_coms[com_id])
-                shortest_paths[com_id][user] = \
-                        nx.single_source_shortest_path(subnet, user) 
+        log('    1] Building Infomap network from a NetworkX graph... ')
+
+        for e in self.trust_net.edges_iter():
+            infomap_wrapper.addLink(*e)
+
+        log('Done.\n    2] Finding communities with Infomap... ')
+
+        infomap_wrapper.run()
+        tree = infomap_wrapper.tree
+
+        for node in tree.treeIter():
+            if node.isLeaf and node.originalLeafIndex != 0:
+                cid = ''
+
+                for i in node.path():
+                    cid += str(i + 1)
+
+                    if not cid in self.com2nodes:
+                        self.com2nodes[cid] = set()
+
+                    # ID of the last community in a path contains
+                    # information about previous communities,
+                    # so we can safely override the current value.
+                    self.node2com[node.originalLeafIndex] = cid
+                    self.com2nodes[cid].add(node.originalLeafIndex)
+                    cid += ':'
+
+        log('Done.\n\n    [communities in total]: {}\n\n'.format(
+            len(self.com2nodes)))
+
+
+    def load_ratings(self, path):
+        self.ratings = {}
+        self.items = set([])
+
+        with open(path, 'r') as data:
+            for line in data.readlines():
+                rating = [e for e in line.replace('\n', '').split(' ')]
+                self.items.add(int(rating[1]))
+
+                if not int(rating[0]) in self.ratings:
+                    self.ratings[int(rating[0])] = {}
+
+                self.ratings[int(rating[0])][int(rating[1])] = float(rating[2])
+
                 
-            paths_from_user = shortest_paths[com_id][user]
+    def predict(self, user, item):
+        weights = []
+        weight_sum = 0
+        delta = 0
+        unreachable = 0
+        distances = []
+        path_lengths = []
+        user2rating = None
+        paths_from_user = None
+        com_queue = self.user_clusters(user)
+        avg_rating = self.avg_ratings.get(user, self.global_avg_rating)
 
+        for com_id in com_queue:
+            user2rating = []
+
+            for rater in (r for r in self.com2nodes[com_id] if r != user):
+                if rater in self.ratings and item in self.ratings[rater]:
+                    user2rating.append((rater, self.ratings[rater][item]))
+
+            if user2rating:
+                if not com_id in self.shortest_paths:
+                    self.shortest_paths[com_id] = {}
+
+                if not user in self.shortest_paths[com_id]:
+                    subnet = self.trust_net.subgraph(self.com2nodes[com_id])
+                    self.shortest_paths[com_id][user] = \
+                            nx.single_source_shortest_path(subnet, user) 
+
+                paths_from_user = self.shortest_paths[com_id][user]
+                break
+
+        if user2rating:
+            assert paths_from_user
+            
             if len(user2rating) == 1:
                 rater = user2rating[0][0]
+
                 if rater not in paths_from_user:
-                    unreachable += 1
+                    unreachable = 1
                     distance = -1
                 else:
                     distance = len(paths_from_user[rater]) - 1
+
+                delta = user2rating[0][1] - self.avg_ratings[rater]
+                return (self.round(avg_rating + delta / 2), 1, unreachable, distance)
+
+            for rater_rating in user2rating:
+                rater = rater_rating[0]
+
+                if rater in paths_from_user:
+                    path_lengths.append(len(paths_from_user[rater]) - 1)
+                else:
+                    unreachable += 1
+                    path_lengths.append(1000000)
+
+            total_path_length = sum(path_lengths)
+            
+            for i, rater_rating in enumerate(user2rating):
+                weights.append(1 - (float(path_lengths[i]) / total_path_length))
+
+                if path_lengths[i] != 1000000:
+                    distances.append(path_lengths[i])
                     
-                delta = user2rating[0][1] - avg_ratings[rater]
-                return (round(avg_rating + delta), 1, unreachable, distance)
-            
-            break
+                weight_sum += weights[i]
 
-    for rater_rating in user2rating:
-        rater = rater_rating[0]
+            for i, rater_rating in enumerate(user2rating):
+                rater = rater_rating[0]
+                rating = rater_rating[1]
+                change = float(weights[i] * (rating - self.avg_ratings[rater]))
+                change = change / weight_sum if change else 0
+                delta += change
+
+        num_raters = len(user2rating)
+        avg_distance = sum(distances) / len(distances) if distances else -1
+        return (self.round(avg_rating + delta), num_raters, unreachable, avg_distance)
+
+    
+    def run(self, ratings_path, trust_path):
+        log('1] Loading trust network... ')
+
+        self.load_trust(trust_path)
+
+        log('Done.\n\n    [nodes]: {}\n    [edges]: {}\n\n'.format(
+            self.trust_net.number_of_nodes(),
+            self.trust_net.number_of_edges()))
+        log('2] Clustering trust network... \n\n')
+
+        start = time.time()
+        self.cluster()
+
+        log('    (Clustering finished in: {}.)\n\n'.format(time.time() - start))
+        log('3] Loading ratings data... ')
+
+        self.load_ratings(ratings_path)
+
+        log('Done.\n\n    [raters]: {}\n    [items]: {}\n\n'.format(len(self.ratings), len(self.items)))
+        log('4] Calculating average ratings... ')
+
+        self.avg_ratings = {}
         
-        if rater in paths_from_user:
-            path_lengths.append(len(paths_from_user[rater]) - 1)
-        else:
-            unreachable += 1
-            path_lengths.append(1000000)
+        for user in self.ratings:
+            self.avg_ratings[user] = \
+                float(sum(self.ratings[user].values())) / len(self.ratings[user])
+            self.rating_sum += self.avg_ratings[user]
 
-    len_sum = sum(path_lengths)
-    weight_sum = 0
-    delta = 0
-    
-    for i, rater_rating in enumerate(user2rating):
-        weights.append(1 - (float(path_lengths[i]) / len_sum))
-        if path_lengths[i] != 1000000:
-            distances.append(path_lengths[i])
-        weight_sum += weights[i]
+        global_avg_rating = self.rating_sum / len(self.ratings)
 
-    for i, rater_rating in enumerate(user2rating):
-        rater = rater_rating[0]
-        rating = rater_rating[1]
-        change = float(weights[i] * (rating - avg_ratings[rater]))
-        
-        if change != 0:
-             change /= weight_sum
-             
-        delta += change
-             
-    num_raters = len(user2rating)
-    avg_distance = -1
-    
-    if distances:
-        avg_distance = sum(distances) / len(distances)
-    
-    if delta:    
-        return (round(avg_rating + delta), num_raters, unreachable, avg_distance)
-    else:
-        return (avg_rating, num_raters, unreachable, avg_distance)
-    
+        log('Done.\n\n5] Rating items... ')
 
-def run(ratings_path, trust_path):
-    ratings = None
-    items = set([])
-    rating_sum = 0.
-    trust_net = None
-    com2nodes = None
-    node2come = None
-    
-    log('1] Loading trust network... ')
+        count = 0
+        error = 0.
+        unreachable = 0.
+        raters = 0.
+        avg_distance = 0.
+        histogram = [0, 0, 0, 0, 0]
 
-    trust_net = load_trust(trust_path)
+        for rater in self.ratings:
+            for item in self.ratings[rater]:
+                count += 1
 
-    log('Done.\n\n    [nodes]: {}\n    [edges]: {}\n\n'.format(
-        trust_net.number_of_nodes(), trust_net.number_of_edges()))
-    log('2] Clustering trust network... \n\n')
+                res = self.predict(rater, item)
 
-    start = time.time()
-    tmp = cluster(trust_net)
-    com2nodes = tmp[0]
-    node2com = tmp[1]
-    
-    log('    (Clustering finished in: {}.)\n\n'.format(time.time() - start))
-    log('3] Loading ratings data... ')
+                prediction = res[0]
+                raters += res[1]
+                unreachable += res[2]
+                avg_distance += res[3]
 
-    ratings = load_ratings(ratings_path, items)
+                tmp = abs(self.ratings[rater][item] - prediction)
+                print(tmp)
+                histogram[int(tmp)] += 1
+                error += tmp
 
-    log('Done.\n\n    [raters]: {}\n    [items]: {}\n\n'.format(len(ratings), len(items)))
-    log('4] Calculating average ratings... ')
+                #if prediction in [5.0, 4.5]:
+                #    print(ratings[rater][item], prediction, tmp)
+                #    best.append((rater, item))
 
-    for user in ratings:
-        avg_ratings[user] = float(sum(ratings[user].values())) / len(ratings[user])
-        rating_sum += avg_ratings[user]
 
-    #print(avg_ratings)    
-    global_avg_rating = rating_sum / len(ratings)
-    
-    log('Done.\n\n5] Rating items... ')
+        log('Done in: {}.\n\n'.format(time.time() - start))
 
-    count = 0
-    error = 0.
-    unreachable = 0.
-    raters = 0.
-    avg_distance = 0.
-    histogram = [0, 0, 0, 0, 0]
-    
-    for rater in ratings:
-        for item in ratings[rater]:
-            count += 1
-            
-            res = predict(
-                trust_net,
-                com2nodes,
-                node2com[rater],
-                ratings,
-                rater,
-                item
+        log('     [average error]: {}\n' \
+            '     [average # raters]: {}\n' \
+            '     [error histogram]: {}\n' \
+            '     [average distance]: {}\n' \
+            '     [average global rating]: {}\n' \
+            '     [unreachable raters]: {}\n\n'.format(
+                error / count,
+                raters / count,
+                histogram,
+                avg_distance / count,
+                global_avg_rating,
+                unreachable / raters
             )
-
-            prediction = res[0]
-            raters += res[1]
-            unreachable += res[2]
-            avg_distance += res[3]
-            
-            tmp = abs(ratings[rater][item] - prediction)
-            histogram[int(tmp)] += 1
-            error += tmp
-            
-
-    log('Done in: {}.\n\n'.format(time.time() - start))
-
-    log('     [average error]: {}\n' \
-        '     [average # raters]: {}\n' \
-        '     [error histogram]: {}\n' \
-        '     [average distance]: {}\n' \
-        '     [unreachable raters]: {}\n\n'.format(
-            error / count,
-            raters / count,
-            histogram,
-            avg_distance / count,
-            unreachable / raters
         )
-    )
 
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=
-        '''Calculate item rating predictions based on trust network
+                                     '''Calculate item rating predictions based on trust network
         and users' rating data. Technique uses user's trusted raters to 
         make a prediction (collaborative-filtering). Raters are determined
         by hierarchical clustering, using Infomap algorithm.'''
@@ -316,9 +305,19 @@ if __name__ == '__main__':
         help='do not output any logs'
     )
 
+    parser.add_argument(
+        '-p',
+        '--precision',
+        type=bool,
+        help='prediction rounding precision, e.g. precision of 0.5 will ' \
+        'produce ratings: 0, 0.5, 1, 1.5, ...'
+    )
+
     args = parser.parse_args()
+    recommender = Recommender()
     silent = args.silent
-    run(args.r, args.t)
+    recommender.precision = args.precision
+    recommender.run(args.r, args.t)
     
 
     
