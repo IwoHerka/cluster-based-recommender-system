@@ -290,6 +290,7 @@ class Recommender:
         cc = 0
         
         for user in self.predictions:
+            break
             if (len(self.ratings[user].keys()) == 15):
                 cc += 1
                 required = 10
@@ -297,20 +298,20 @@ class Recommender:
                                        key=operator.itemgetter(1), reverse=True)
                 
                 top_predicted = top_predicted[:required]
-                
                 rand_sample = set(random.sample(self.items, required))
                 
                 top_predicted = set([i[0] for i in top_predicted])
                 top_real = sorted(self.ratings[user].items(),
                                   key=operator.itemgetter(1), reverse=True)
+                
                 top_real = top_real[:required]
                 top_real = set([i[0] for i in top_real])
             
                 avg_precision += len(top_real & top_predicted)
                 rand_precision += len(top_real & rand_sample)
 
-        log('     [avg top-N precision]: {}\n'.format(avg_precision / cc / required))
-        log('     [random top-N precision]: {}\n\n'.format(rand_precision / cc / required))    
+        #log('     [avg top-N precision]: {}\n'.format(avg_precision / cc / required))
+        #log('     [random top-N precision]: {}\n\n'.format(rand_precision / cc / required))    
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=
