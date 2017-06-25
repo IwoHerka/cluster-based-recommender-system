@@ -28,6 +28,9 @@ class cluster:
         
         return set([self.id])
 
+    def __repr__(self):
+        return str([c.id for c in self.children])
+
     
 class SimilarityRecommender(Recommender):       
     def _cluster_users(self):
@@ -35,7 +38,7 @@ class SimilarityRecommender(Recommender):
         assert self.items
 
         clusters = {}
-        nrows, ncols = max(self.ratings) + 1, max(self.items) + 1
+        nrows, ncols = len(self.ratings), max(self.items) + 1
         dokmat = dok_matrix((nrows, ncols), dtype=np.float32)
 
         for user in self.ratings:
@@ -43,15 +46,18 @@ class SimilarityRecommender(Recommender):
                 dokmat[user, item] = self.ratings[user][item]
 
         # TODO: Find a way to use sparse matrix.
-        linkage = hierarchy.linkage(dokmat.toarray(), method='ward')
+        linkage = hierarchy.linkage(dokmat.toarray(),
+                                    method='complete',
+                                    metric='cosine')
         
         for ind, row in enumerate(linkage):
             for i in range(2):
-                if not row[i] in clusters:
-                    clusters[row[i]] = cluster(row[i])
+                rid = int(row[i])
+                if not rid in clusters:
+                    clusters[rid] = cluster(rid)
 
-            A = clusters.get(row[0])
-            B = clusters.get(row[1])
+            A = clusters.get(int(row[0]))
+            B = clusters.get(int(row[1]))
             C = cluster(nrows + ind)
             
             C.children.add(A)
@@ -66,6 +72,10 @@ class SimilarityRecommender(Recommender):
             '[stored values]: {}\n'
             '[clusters]: {}'
             .format(nrows, ncols, dokmat.nnz, len(clusters)), 1, 1)
+
+        #print(dokmat.toarray())
+        #print('')
+        #print(clusters)
         
         return clusters
 
@@ -86,6 +96,7 @@ class SimilarityRecommender(Recommender):
     def _predict(self, user, item):
         assert self.ratings
         assert self.min_nraters
+        assert self.avg_ratings
         
         com_queue = self._com_queue(user)
         
@@ -98,10 +109,17 @@ class SimilarityRecommender(Recommender):
 
             if len(raters) >= self.min_nraters:
                 break
+        
+        delta = 0
+        #print(raters)
+        
+        for rater, rating in raters:
+            delta += rating - self.avg_ratings[rater]
 
-        print(len(raters))
-        print(raters)
-        return (1, 1, 1, 1)
+        average = max(self.avg_ratings.get(user, -1), self.global_avg_rating)
+        prediction = self._round(average + delta)
+        
+        return (prediction, len(raters), 0, 0)
             
 
 if __name__ == '__main__':
@@ -127,4 +145,5 @@ if __name__ == '__main__':
     recommender = SimilarityRecommender()
     recommender.ratings_path = args.r
     recommender.min_nraters = args.min_raters
+    recommender.round_precision = 0.5
     recommender.run()
