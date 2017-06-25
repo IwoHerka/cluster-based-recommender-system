@@ -4,6 +4,7 @@ import numpy as np
 from recommender import Recommender
 from scipy.sparse import dok_matrix
 from scipy.cluster import hierarchy
+from scipy.spatial.distance import pdist
 
 from utils import log
 
@@ -39,14 +40,14 @@ class SimilarityRecommender(Recommender):
 
         clusters = {}
         nrows, ncols = len(self.ratings), max(self.items) + 1
-        dokmat = dok_matrix((nrows, ncols), dtype=np.float32)
+        self.dokmat = dok_matrix((nrows, ncols), dtype=np.float32)
 
         for user in self.ratings:
             for item in self.ratings[user]:
-                dokmat[user, item] = self.ratings[user][item]
+                self.dokmat[user, item] = self.ratings[user][item]
 
         # TODO: Find a way to use sparse matrix.
-        linkage = hierarchy.linkage(dokmat.toarray(),
+        linkage = hierarchy.linkage(self.dokmat.toarray(),
                                     method='complete',
                                     metric='cosine')
         
@@ -71,11 +72,7 @@ class SimilarityRecommender(Recommender):
             '[columns - items]: {}\n'      
             '[stored values]: {}\n'
             '[clusters]: {}'
-            .format(nrows, ncols, dokmat.nnz, len(clusters)), 1, 1)
-
-        #print(dokmat.toarray())
-        #print('')
-        #print(clusters)
+            .format(nrows, ncols, self.dokmat.nnz, len(clusters)), 1, 1)
         
         return clusters
 
@@ -109,16 +106,40 @@ class SimilarityRecommender(Recommender):
 
             if len(raters) >= self.min_nraters:
                 break
-        
-        delta = 0
-        #print(raters)
-        
-        for rater, rating in raters:
-            delta += rating - self.avg_ratings[rater]
 
-        average = max(self.avg_ratings.get(user, -1), self.global_avg_rating)
-        prediction = self._round(average + delta)
+        average = self.avg_ratings.get(user, -1)
+        average = self.global_avg_rating if average == -1 else average
         
+        if not raters:
+            return (average, 0, 0, 0)
+        
+        delta = 0.      
+        vectors = (self.dokmat[user].toarray(),) \
+                  + tuple([self.dokmat[r[0]].toarray() for r in raters])
+        
+        concat = np.concatenate(vectors, axis=0)
+        similarity = pdist(concat, 'cosine')
+        weight_sum = sum(similarity[:5])
+
+        for i, (rater, rating) in enumerate(raters):
+            #print('rater: {}, sim: {}, delta: {}\n'
+            #      .format(rater,
+            #              similarity[i],
+            #              rating - self.avg_ratings[rater]))
+
+            delta += similarity[i] * (rating - self.avg_ratings[rater])
+
+        wdelta = delta / weight_sum if weight_sum != 0 else delta
+        prediction = self._round(average + wdelta)
+        
+        if False:
+            print('avg', average)
+            print('delta', delta)
+            print('weight_sum', weight_sum)
+            print('pred - avg', wdelta)
+            print('real rat', self.ratings[user][item])
+            print('pred', prediction)
+
         return (prediction, len(raters), 0, 0)
             
 
@@ -141,9 +162,18 @@ if __name__ == '__main__':
              'Value of k guarantees *at least* k raters. Defaults to 1.'
     )
 
+    parser.add_argument(
+        '-iter-limit',
+        type=int,
+        default=-1,
+        help='Minimal acceptable number of raters used to make a prediction. '
+             'Value of k guarantees *at least* k raters. Defaults to 1.'
+    )
+        
     args = parser.parse_args()
     recommender = SimilarityRecommender()
     recommender.ratings_path = args.r
     recommender.min_nraters = args.min_raters
     recommender.round_precision = 0.5
+    recommender.iter_limit = args.iter_limit
     recommender.run()

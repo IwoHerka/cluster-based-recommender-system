@@ -1,4 +1,8 @@
 import abc
+import argparse
+import random
+import operator
+
 from collections import defaultdict
 
 from utils import log, calc_averages
@@ -78,6 +82,7 @@ class Recommender(metaclass=abc.ABCMeta):
         
     def run(self):
         assert self.ratings_path
+        assert self.iter_limit
         
         log('Loading ratings...')
         self.ratings, self.items = self._load_ratings(self.ratings_path)
@@ -94,32 +99,81 @@ class Recommender(metaclass=abc.ABCMeta):
         error_sum = 0
         raters_sum = 0
         self.predictions = defaultdict(lambda: {})
+
+        class BreakAllLoops(BaseException): pass
         
-        for rater in self.ratings:
-        #for rater in [0]:
-            #print(iters)
-            ratings = self.ratings[rater]
+        try:
+            for rater in self.ratings:
+            #for rater in [0]:
+                #print(iters)
+                ratings = self.ratings[rater]
 
-            #for item in [1]:
-            for item in ratings:
-                prediction, nraters, ndisc, avg_dist = self._predict(rater, item)
-                error = abs(ratings[item] - prediction)
-                self.predictions[rater][item] = prediction
+                #for item in [1]:
+                for item in ratings:
+                    prediction, nraters, ndisc, avg_dist = self._predict(rater, item)
+                    error = abs(ratings[item] - prediction)
+                    self.predictions[rater][item] = prediction
 
-                error_sum += error
-                raters_sum += nraters
-                iters += 1
+                    #print(ratings[item], prediction)
 
-                if iters == 1000:
+                    error_sum += error
+                    raters_sum += nraters
+                    iters += 1
+
+                    if iters == self.iter_limit:
+                        raise BreakAllLoops()
+        except BreakAllLoops:
+            pass
+                
+        rand_precision = 0.
+        avg_precision = 0.
+        required = 15
+        cc = 0
+        
+        for user in self.predictions:
+            if (len(self.ratings[user].keys()) >= 50):
+                if len(self.ratings[user]) != len(self.predictions[user]):
                     break
                 
-            if iters == 1000:
-                break
+                top_predicted = sorted(self.predictions[user].items(),
+                                       key=operator.itemgetter(1, 0),
+                                       reverse=True)
                 
+                top_predicted = top_predicted[:required]
+                #print('p', top_predicted)
+                top_predicted = set([i[0] for i in top_predicted])
+                #print('p', top_predicted)
 
+                rand_sample = set(random.sample(self.ratings[user].items(), required))
+                rand_sample = set([i[0] for i in rand_sample])
+                #print(rand_sample)
+                top_real = sorted(self.ratings[user].items(),
+                                  key=operator.itemgetter(1, 0),
+                                  reverse=True)
+                
+                top_real = top_real[:required]
+                #print('r', top_real)
+                top_real = set([i[0] for i in top_real])
+                #print('r', top_real)
+
+                for real in top_real:
+                    print(real, self.predictions[user][real])
+            
+                avg_precision += len(top_real & top_predicted)
+                rand_precision += len(top_real & rand_sample)
+
+                cc += 1
+   
 
         log('[average error]: {}\n'
             '[average # raters]: {}\n'
-            .format(error_sum / iters, raters_sum / iters), 1, 1)
+            '[top-N samples]: {}\n'
+            '[avg top-N precision]: {}\n'
+            '[rand top-N precision]: {}\n'
+            .format(error_sum / iters,
+                    raters_sum / iters,
+                    cc,
+                    avg_precision / cc / required,
+                    rand_precision / cc / required), 1, 1)
 
         
