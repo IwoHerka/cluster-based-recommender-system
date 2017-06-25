@@ -30,13 +30,20 @@ class Recommender(metaclass=abc.ABCMeta):
         self.rating_sum = 0
         self.ratings_path = None
         
-
     @abc.abstractmethod    
     def _cluster_users(self):
         pass
 
     @abc.abstractmethod
     def _predict(self, user, item):
+        pass
+
+    @abc.abstractmethod
+    def _com_queue(self, user):
+        pass
+
+    @abc.abstractmethod
+    def _com2nodes(self, com):
         pass
 
     def _load_ratings(self, path):
@@ -82,10 +89,12 @@ class Recommender(metaclass=abc.ABCMeta):
         avg_error = 0
         self.predictions = defaultdict(lambda: {})
         
-        for rater in self.ratings:
+        #for rater in self.ratings:
+        for rater in [0]:    
             ratings = self.ratings[rater]
-            
-            for item in ratings:
+
+            for item in [1]:
+            #for item in ratings:
                 prediction, nraters, ndisc, avg_dist = self._predict(rater, item)
                 error = abs(ratings[item] - prediction)
                 self.predictions[rater][item] = prediction
