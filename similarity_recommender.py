@@ -174,6 +174,7 @@ if __name__ == '__main__':
     recommender = SimilarityRecommender()
     recommender.ratings_path = args.r
     recommender.min_nraters = args.min_raters
-    recommender.round_precision = 0.5
+    recommender.round_precision = 1
     recommender.iter_limit = args.iter_limit
+    recommender.sample_size = 14000
     recommender.run()

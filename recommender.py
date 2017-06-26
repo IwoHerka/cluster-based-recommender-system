@@ -61,7 +61,7 @@ class Recommender(metaclass=abc.ABCMeta):
 
         with open(path, 'r') as data:
             for line in data.readlines():
-                line = [e for e in line.rstrip().split(' ')]
+                line = [e for e in line.rstrip().split('::')]
                 
                 user = int(line[0])
                 item = int(line[1])
@@ -105,7 +105,7 @@ class Recommender(metaclass=abc.ABCMeta):
         try:
             for rater in self.ratings:
             #for rater in [0]:
-                #print(iters)
+                print(iters)
                 ratings = self.ratings[rater]
 
                 #for item in [1]:
@@ -127,11 +127,11 @@ class Recommender(metaclass=abc.ABCMeta):
                 
         rand_precision = 0.
         avg_precision = 0.
-        required = 15
+        required = 10
         cc = 0
         
         for user in self.predictions:
-            if (len(self.ratings[user].keys()) >= 50):
+            if (len(self.ratings[user].keys()) >= 25):
                 if len(self.ratings[user]) != len(self.predictions[user]):
                     break
                 
