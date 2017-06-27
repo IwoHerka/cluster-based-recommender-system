@@ -33,8 +33,18 @@ class cluster:
         return str([c.id for c in self.children])
 
     
-class SimilarityRecommender(Recommender):       
+class SimilarityRecommender(Recommender):
+    def __init__(self):
+        super(SimilarityRecommender, self).__init__()
+
+        # https://docs.scipy.org/doc/scipy-0.19.0/reference/ \
+        # generated/scipy.cluster.hierarchy.linkage.html
+        self.linkage_method = None
+        self.linkage_metric = None
+    
     def _cluster_users(self):
+        assert self.linkage_method
+        assert self.linkage_metric
         assert self.ratings
         assert self.items
 
@@ -48,8 +58,8 @@ class SimilarityRecommender(Recommender):
 
         # TODO: Find a way to use sparse matrix.
         linkage = hierarchy.linkage(self.dokmat.toarray(),
-                                    method='complete',
-                                    metric='cosine')
+                                    method=self.linkage_method,
+                                    metric=self.linkage_metric)
         
         for ind, row in enumerate(linkage):
             for i in range(2):
@@ -90,7 +100,7 @@ class SimilarityRecommender(Recommender):
     def _com2nodes(self, com):
         return com.nodes
         
-    def _predict(self, user, item):
+    def predict(self, user, item):
         assert self.ratings
         assert self.min_nraters
         assert self.avg_ratings
@@ -116,30 +126,18 @@ class SimilarityRecommender(Recommender):
         delta = 0.      
         vectors = (self.dokmat[user].toarray(),) \
                   + tuple([self.dokmat[r[0]].toarray() for r in raters])
-        
+
+        # TODO: Don't calculate this over and over.
         concat = np.concatenate(vectors, axis=0)
         similarity = pdist(concat, 'cosine')
         weight_sum = sum(similarity[:5])
 
         for i, (rater, rating) in enumerate(raters):
-            #print('rater: {}, sim: {}, delta: {}\n'
-            #      .format(rater,
-            #              similarity[i],
-            #              rating - self.avg_ratings[rater]))
-
             delta += similarity[i] * (rating - self.avg_ratings[rater])
 
         wdelta = delta / weight_sum if weight_sum != 0 else delta
         prediction = self._round(average + wdelta)
         
-        if False:
-            print('avg', average)
-            print('delta', delta)
-            print('weight_sum', weight_sum)
-            print('pred - avg', wdelta)
-            print('real rat', self.ratings[user][item])
-            print('pred', prediction)
-
         return (prediction, len(raters), 0, 0)
             
 
@@ -169,12 +167,45 @@ if __name__ == '__main__':
         help='Minimal acceptable number of raters used to make a prediction. '
              'Value of k guarantees *at least* k raters. Defaults to 1.'
     )
+
+    parser.add_argument(
+        '-clusters',
+        type=str,
+        help='If specified, recommender will load cluster data from file.'
+    )
+
+    parser.add_argument(
+        '-linkage-method',
+        type=str,
+        default='complete',
+        help='Linkage method'
+    )
+
+    parser.add_argument(
+        '-linkage-metric',
+        type=str,
+        default='cosine',
+        help='Linkage metric'
+    )
+
+    parser.add_argument(
+        '-test-sample-size',
+        type=int,
+        default=100,
+        help='Test sample size'
+    )
         
     args = parser.parse_args()
     recommender = SimilarityRecommender()
+    
     recommender.ratings_path = args.r
     recommender.min_nraters = args.min_raters
     recommender.round_precision = 1
     recommender.iter_limit = args.iter_limit
-    recommender.sample_size = 14000
-    recommender.run()
+    recommender.sample_size = args.test_sample_size
+    recommender.probe_set_path = './data/probe_set.dat' # TODO: Move to args
+    recommender.linkage_method = args.linkage_method
+    recommender.linkage_metric = args.linkage_metric
+    
+    recommender.prepare()
+    recommender.test()

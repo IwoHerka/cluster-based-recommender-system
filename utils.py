@@ -1,4 +1,5 @@
 import sys
+from random import sample
 
 from scipy.sparse import dok_matrix
 
@@ -27,3 +28,35 @@ def calc_averages(dictionary):
         averages[key] = float(sum(values)) / len(values)
 
     return averages
+
+
+def sample_ratings(ratings, nsamples=1, exclude=[]):
+    count = 0
+    samples = set([])
+    
+    if not ratings:
+        return samples
+
+    while count < nsamples:
+        for _ in range(nsamples):
+            user = sample(ratings.keys(), 1)[0]
+            item = sample(ratings[user].keys(), 1)[0]
+
+            if not item in exclude:
+                exclude.append(item)
+                samples.add(item)
+                count += 1
+
+
+def load_items(path, delimit='::', pos=1):
+    items = set([])
+
+    with open(path, 'r') as src:
+        for ln in [ln.split(delimit) for ln in src.readlines()]:
+            items.add(int(ln[pos]))
+
+    return items
+
+            
+            
+    

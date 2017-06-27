@@ -5,7 +5,7 @@ import operator
 
 from collections import defaultdict
 
-from utils import log, calc_averages
+from utils import log, calc_averages, sample_ratings, load_items
 
 
 class Recommender(metaclass=abc.ABCMeta):
@@ -33,13 +33,19 @@ class Recommender(metaclass=abc.ABCMeta):
 
         self.rating_sum = 0
         self.ratings_path = None
+        self.min_nraters = None
+        self.round_precision = None
+        self.iter_limit = None # Need this?
+        self.sample_size = None
+        self.probe_set_path = None
+        
+
+    @abc.abstractmethod
+    def predict(self, user, item):
+        pass
         
     @abc.abstractmethod    
     def _cluster_users(self):
-        pass
-
-    @abc.abstractmethod
-    def _predict(self, user, item):
         pass
 
     @abc.abstractmethod
@@ -52,16 +58,20 @@ class Recommender(metaclass=abc.ABCMeta):
 
     def _round(self, n):
         assert self.round_precision
+        
         correction = 0.5 if n >= 0 else -0.5
         return int(n / self.round_precision + correction) * self.round_precision
 
     def _load_ratings(self, path):
+        assert path
+        assert type(path) == str
+        
         ratings = defaultdict(lambda: {})
         items = set([])
 
         with open(path, 'r') as data:
             for line in data.readlines():
-                line = [e for e in line.rstrip().split('::')]
+                line = [e for e in line.rstrip().split(' ')]
                 
                 user = int(line[0])
                 item = int(line[1])
@@ -79,10 +89,9 @@ class Recommender(metaclass=abc.ABCMeta):
             count += 1
 
         return (lratings, items)
-        
-    def run(self):
+
+    def prepare(self):
         assert self.ratings_path
-        assert self.iter_limit
         
         log('Loading ratings...')
         self.ratings, self.items = self._load_ratings(self.ratings_path)
@@ -94,86 +103,16 @@ class Recommender(metaclass=abc.ABCMeta):
 
         log('Clustering users...', 0, 1)
         self.user2cluster = self._cluster_users()
-
-        iters = 0
-        error_sum = 0
-        raters_sum = 0
-        self.predictions = defaultdict(lambda: {})
-
-        class BreakAllLoops(BaseException): pass
         
-        try:
-            for rater in self.ratings:
-            #for rater in [0]:
-                print(iters)
-                ratings = self.ratings[rater]
-
-                #for item in [1]:
-                for item in ratings:
-                    prediction, nraters, ndisc, avg_dist = self._predict(rater, item)
-                    error = abs(ratings[item] - prediction)
-                    self.predictions[rater][item] = prediction
-
-                    #print(ratings[item], prediction)
-
-                    error_sum += error
-                    raters_sum += nraters
-                    iters += 1
-
-                    if iters == self.iter_limit:
-                        raise BreakAllLoops()
-        except BreakAllLoops:
-            pass
-                
-        rand_precision = 0.
-        avg_precision = 0.
-        required = 10
-        cc = 0
         
-        for user in self.predictions:
-            if (len(self.ratings[user].keys()) >= 25):
-                if len(self.ratings[user]) != len(self.predictions[user]):
-                    break
-                
-                top_predicted = sorted(self.predictions[user].items(),
-                                       key=operator.itemgetter(1, 0),
-                                       reverse=True)
-                
-                top_predicted = top_predicted[:required]
-                #print('p', top_predicted)
-                top_predicted = set([i[0] for i in top_predicted])
-                #print('p', top_predicted)
-
-                rand_sample = set(random.sample(self.ratings[user].items(), required))
-                rand_sample = set([i[0] for i in rand_sample])
-                #print(rand_sample)
-                top_real = sorted(self.ratings[user].items(),
-                                  key=operator.itemgetter(1, 0),
-                                  reverse=True)
-                
-                top_real = top_real[:required]
-                #print('r', top_real)
-                top_real = set([i[0] for i in top_real])
-                #print('r', top_real)
-
-                for real in top_real:
-                    print(real, self.predictions[user][real])
+    def test(self):
+        assert self.ratings
+        assert self.sample_size
+        assert type(self.probe_set_path) == str
             
-                avg_precision += len(top_real & top_predicted)
-                rand_precision += len(top_real & rand_sample)
-
-                cc += 1
-   
-
-        log('[average error]: {}\n'
-            '[average # raters]: {}\n'
-            '[top-N samples]: {}\n'
-            '[avg top-N precision]: {}\n'
-            '[rand top-N precision]: {}\n'
-            .format(error_sum / iters,
-                    raters_sum / iters,
-                    cc,
-                    avg_precision / cc / required,
-                    rand_precision / cc / required), 1, 1)
+        user = random.sample(self.ratings.keys(), 1)[0]
+        rated_items = list(self.ratings[user])
+        top_items = load_items(self.probe_set_path)
+        sample_set = sample_ratings(self.ratings, self.sample_size, exclude=rated_items)
 
         
