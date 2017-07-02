@@ -30,7 +30,7 @@ def calc_averages(dictionary):
     return averages
 
 
-def sample_ratings(ratings, nsamples=1, exclude=[]):
+def sample_unrated_items(ratings, nsamples=1, exclude=[]):
     count = 0
     samples = set([])
     
@@ -47,15 +47,21 @@ def sample_ratings(ratings, nsamples=1, exclude=[]):
                 samples.add(item)
                 count += 1
 
+                if count >= nsamples:
+                    break
 
-def load_items(path, delimit='::', pos=1):
-    items = set([])
+    return list(samples)
+
+
+def load_probe_set(path, div='::'):
+    ratings = set([])
+    print(div)
 
     with open(path, 'r') as src:
-        for ln in [ln.split(delimit) for ln in src.readlines()]:
-            items.add(int(ln[pos]))
+        for ln in [ln.split(div) for ln in src.readlines()]:
+            ratings.add((int(ln[0]), int(ln[1])))
 
-    return items
+    return ratings
 
             
             

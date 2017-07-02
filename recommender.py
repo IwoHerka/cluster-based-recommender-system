@@ -5,7 +5,7 @@ import operator
 
 from collections import defaultdict
 
-from utils import log, calc_averages, sample_ratings, load_items
+from utils import log, calc_averages, sample_unrated_items, load_probe_set
 
 
 class Recommender(metaclass=abc.ABCMeta):
@@ -71,7 +71,7 @@ class Recommender(metaclass=abc.ABCMeta):
 
         with open(path, 'r') as data:
             for line in data.readlines():
-                line = [e for e in line.rstrip().split(' ')]
+                line = [e for e in line.rstrip().split(self.delimiter)]
                 
                 user = int(line[0])
                 item = int(line[1])
@@ -109,10 +109,46 @@ class Recommender(metaclass=abc.ABCMeta):
         assert self.ratings
         assert self.sample_size
         assert type(self.probe_set_path) == str
+
+        print(self.ratings_path)
+        print(self.ratings[666])
+        #print(self.predict(666, 206))
+        #return
+
+        N = 10
+        T = 50
+        hits = 0
+        self.sample_size = 100
+        
+        top_ratings = list(load_probe_set(self.probe_set_path, div=self.delimiter))
+        
+        for user, item in top_ratings[:T]:              
+            rated_items = list(self.ratings[user]) if user in self.ratings else []
+            unrated_items = sample_unrated_items(self.ratings,
+                                                 self.sample_size - 1, exclude=rated_items)
+
+            sample_set = [item] + unrated_items
+            ratings = []
+
+            for it in sample_set:
+                score = self.predict(user, it)[0]
+                if it == item:
+                    SCORE = score
+                ratings.append((it, score))
+
+            ratings.sort(key=lambda k: k[1], reverse=True)
+            ratings = [r[0] for r in ratings[:N]]
             
-        user = random.sample(self.ratings.keys(), 1)[0]
-        rated_items = list(self.ratings[user])
-        top_items = load_items(self.probe_set_path)
-        sample_set = sample_ratings(self.ratings, self.sample_size, exclude=rated_items)
+            log('\n[user]: {}\n'
+                '[item]: {}\n'
+                '[score]: {}\n'
+                '[in top-N]: {}'.format(user, item, SCORE, item in ratings), 1)
+
+            hits += int(item in ratings)
+
+        print(hits, N, self.sample_size, hits / T)
+
 
         
+#666
+#206

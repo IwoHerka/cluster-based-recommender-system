@@ -3,8 +3,8 @@ import random
 import fileinput
 
 
-SAMPLE_SIZE = 14000
-PATH = './data/movielens_ratings.dat'  
+SAMPLE_SIZE = 500
+PATH = './data/filmtrust_ratings.dat'  
 
 count = 0
 samples = []
@@ -12,7 +12,7 @@ samples = []
 with fileinput.FileInput(PATH, inplace=True) as file:
     while count < SAMPLE_SIZE:
         for line in file:
-            if random.random() < 0.0143 and random.random() < 0.98 and count < SAMPLE_SIZE:
+            if random.random() < 0.015 and random.random() < 0.98 and count < SAMPLE_SIZE:
                 samples.append(line)
                 count += 1
             else:

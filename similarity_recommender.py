@@ -38,10 +38,10 @@ class SimilarityRecommender(Recommender):
         super(SimilarityRecommender, self).__init__()
 
         # https://docs.scipy.org/doc/scipy-0.19.0/reference/ \
-        # generated/scipy.cluster.hierarchy.linkage.html
+            # generated/scipy.cluster.hierarchy.linkage.html
         self.linkage_method = None
         self.linkage_metric = None
-    
+        
     def _cluster_users(self):
         assert self.linkage_method
         assert self.linkage_metric
@@ -99,7 +99,7 @@ class SimilarityRecommender(Recommender):
 
     def _com2nodes(self, com):
         return com.nodes
-        
+    
     def predict(self, user, item):
         assert self.ratings
         assert self.min_nraters
@@ -129,17 +129,30 @@ class SimilarityRecommender(Recommender):
 
         # TODO: Don't calculate this over and over.
         concat = np.concatenate(vectors, axis=0)
-        similarity = pdist(concat, 'cosine')
-        weight_sum = sum(similarity[:5])
-
-        for i, (rater, rating) in enumerate(raters):
-            delta += similarity[i] * (rating - self.avg_ratings[rater])
-
-        wdelta = delta / weight_sum if weight_sum != 0 else delta
-        prediction = self._round(average + wdelta)
+        similarity = pdist(concat, 'cosine')[:len(raters)]
+        similarity = [1 - dist for dist in similarity]
+        weight_sum = max(sum(similarity), 0000.1)
         
+        for i, (rater, rating) in enumerate(raters):
+            #print(rating - self.avg_ratings[rater])
+            delta += similarity[i]  * (rating - self.avg_ratings[rater])
+
+        wdelta = delta
+        wdelta = delta / weight_sum if weight_sum != 0 else delta
+        prediction = min(5, max(0, self._round(average + wdelta)))
+
+        if not False:
+            print('raters', raters)
+            print('similarity', similarity)
+            print('u:i', user, item)
+            print('p/r', prediction, self.ratings[user][item] if user in self.ratings and item in self.ratings[user] else '-')
+            print('avg', average)
+            print('weight sum', weight_sum)
+            print(delta, wdelta)
+
+            raise Exception()
         return (prediction, len(raters), 0, 0)
-            
+    
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -157,7 +170,7 @@ if __name__ == '__main__':
         type=int,
         default=1,
         help='Minimal acceptable number of raters used to make a prediction. '
-             'Value of k guarantees *at least* k raters. Defaults to 1.'
+        'Value of k guarantees *at least* k raters. Defaults to 1.'
     )
 
     parser.add_argument(
@@ -165,7 +178,7 @@ if __name__ == '__main__':
         type=int,
         default=-1,
         help='Minimal acceptable number of raters used to make a prediction. '
-             'Value of k guarantees *at least* k raters. Defaults to 1.'
+        'Value of k guarantees *at least* k raters. Defaults to 1.'
     )
 
     parser.add_argument(
@@ -194,18 +207,27 @@ if __name__ == '__main__':
         default=100,
         help='Test sample size'
     )
-        
+
+    parser.add_argument(
+        '-delimiter',
+        type=str,
+        default='::',
+        help='Source data delimiter'
+    )
+    
     args = parser.parse_args()
     recommender = SimilarityRecommender()
     
-    recommender.ratings_path = args.r
+    #recommender.ratings_path = args.r
     recommender.min_nraters = args.min_raters
-    recommender.round_precision = 1
+    recommender.round_precision = 0.5
     recommender.iter_limit = args.iter_limit
     recommender.sample_size = args.test_sample_size
-    recommender.probe_set_path = './data/probe_set.dat' # TODO: Move to args
+    recommender.probe_set_path = './data/filmtrust_test_set.dat' # TODO: Move to args
+    recommender.ratings_path = './data/filmtrust_training_set.dat'
     recommender.linkage_method = args.linkage_method
     recommender.linkage_metric = args.linkage_metric
+    recommender.delimiter = ' '
     
     recommender.prepare()
     recommender.test()
