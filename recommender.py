@@ -80,15 +80,26 @@ class Recommender(metaclass=abc.ABCMeta):
                 items.add(item)
                 ratings[user][item] = rating
 
-        count = 0
-        lratings = {}
+        #count = 0
+        #lratings = {}
 
         # Relabel keys: 0-N.
-        for key in ratings.keys():            
-            lratings[count] = ratings[key]
-            count += 1
+        #for key in ratings.keys():            
+        #    lratings[count] = ratings[key]
+        #    count += 1
 
-        return (lratings, items)
+        return (ratings, items)
+
+    def _load_tuples(self, path):
+        tuples = []
+
+        with open(path, 'r') as data:
+            for line in data.readlines():
+                line = line.rstrip().split(self.delimiter)
+                tuples.append((int(line[0]), int(line[1])))
+
+        return tuples
+                
 
     def prepare(self):
         assert self.ratings_path
@@ -104,33 +115,34 @@ class Recommender(metaclass=abc.ABCMeta):
         log('Clustering users...', 0, 1)
         self.user2cluster = self._cluster_users()
         
-        
     def test(self):
         assert self.ratings
         assert self.sample_size
         assert type(self.probe_set_path) == str
 
-        print(self.ratings_path)
-        print(self.ratings[666])
-        #print(self.predict(666, 206))
+        #print(self.predict(15, 2699))
         #return
 
         N = 10
-        T = 50
+        T = 25
         hits = 0
-        self.sample_size = 100
+        self.sample_size = 1000
         
-        top_ratings = list(load_probe_set(self.probe_set_path, div=self.delimiter))
+        top_ratings = self._load_tuples(self.probe_set_path)
         
         for user, item in top_ratings[:T]:              
             rated_items = list(self.ratings[user]) if user in self.ratings else []
             unrated_items = sample_unrated_items(self.ratings,
-                                                 self.sample_size - 1, exclude=rated_items)
+                                                 self.sample_size - 1,
+                                                 exclude=rated_items)
 
             sample_set = [item] + unrated_items
             ratings = []
+            count = 0
 
             for it in sample_set:
+                count += 1
+                #print('iteration', count)
                 score = self.predict(user, it)[0]
                 if it == item:
                     SCORE = score
@@ -152,3 +164,6 @@ class Recommender(metaclass=abc.ABCMeta):
         
 #666
 #206
+
+#10/100: 0.34
+#10/500: 
