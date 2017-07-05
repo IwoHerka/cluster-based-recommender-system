@@ -124,9 +124,9 @@ class Recommender(metaclass=abc.ABCMeta):
         #return
 
         N = 10
-        T = 25
+        T = 50
         hits = 0
-        self.sample_size = 1000
+        self.sample_size = 100
         
         top_ratings = self._load_tuples(self.probe_set_path)
         
@@ -136,7 +136,8 @@ class Recommender(metaclass=abc.ABCMeta):
                                                  self.sample_size - 1,
                                                  exclude=rated_items)
 
-            sample_set = [item] + unrated_items
+            sample_set =  [item] + unrated_items
+            #random.shuffle(sample_set)
             ratings = []
             count = 0
 
@@ -149,7 +150,10 @@ class Recommender(metaclass=abc.ABCMeta):
                 ratings.append((it, score))
 
             ratings.sort(key=lambda k: k[1], reverse=True)
+            print([r for r in ratings[:N]])
+            print(len([r for r in ratings if r[1] == 5]))
             ratings = [r[0] for r in ratings[:N]]
+            
             
             log('\n[user]: {}\n'
                 '[item]: {}\n'

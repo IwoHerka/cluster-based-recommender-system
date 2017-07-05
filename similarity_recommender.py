@@ -123,16 +123,17 @@ class SimilarityRecommender(Recommender):
             return (average, 0, 0, 0)
         
         delta = 0.      
-        vectors = (self.dokmat[user].toarray(),) \
-                  + tuple([self.dokmat[r[0]].toarray() for r in raters])
+        #vectors = (self.dokmat[user].toarray(),) \
+        #          + tuple([self.dokmat[r[0]].toarray() for r in raters])
 
         # TODO: Don't calculate this over and over.
-        concat = np.concatenate(vectors, axis=0)
-        similarity = pdist(concat, 'cosine')[:len(raters)]
-        weight_sum = max(sum(similarity), 0000.1)
+        #concat = np.concatenate(vectors, axis=0)
+        #similarity = pdist(concat, self.linkage_metric)[:len(raters)]
+        weight_sum = len(raters)#max(sum(similarity), 0000.1)
         
         for i, (rater, rating) in enumerate(raters):
-            delta += similarity[i]  * (rating - self.avg_ratings[rater] * 0.75)
+            delta += 1  * (rating - self.avg_ratings[rater] * 1)
+            #delta += similarity[i]  * (rating - self.avg_ratings[rater] * 0.75)
 
         wdelta = delta / weight_sum if weight_sum != 0 else delta
         prediction = min(5, max(0, self._round(average + wdelta)))
@@ -187,7 +188,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '-linkage-method',
         type=str,
-        default='complete',
+        default='average',
         help='Linkage method'
     )
 
