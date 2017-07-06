@@ -32,12 +32,14 @@ class Recommender(metaclass=abc.ABCMeta):
         self.global_avg_rating = 0
 
         self.rating_sum = 0
-        self.ratings_path = None
         self.min_nraters = None
         self.round_precision = None
-        self.iter_limit = None # Need this?
-        self.sample_size = None
-        self.probe_set_path = None
+        
+        self.top_ratings_path = None
+        self.ratings_path = None
+
+        self.top_n = None
+        self.test_sample_size = None
         
 
     @abc.abstractmethod
@@ -62,7 +64,7 @@ class Recommender(metaclass=abc.ABCMeta):
         correction = 0.5 if n >= 0 else -0.5
         return int(n / self.round_precision + correction) * self.round_precision
 
-    def _load_ratings(self, path):
+    def _load_ratings(self, path, relabel=False):
         assert path
         assert type(path) == str
         
@@ -80,13 +82,14 @@ class Recommender(metaclass=abc.ABCMeta):
                 items.add(item)
                 ratings[user][item] = rating
 
-        #count = 0
-        #lratings = {}
+        if relabel:
+            count = 0
+            lratings = {}
 
-        # Relabel keys: 0-N.
-        #for key in ratings.keys():            
-        #    lratings[count] = ratings[key]
-        #    count += 1
+            # Relabel keys: 0-N.
+            for key in ratings.keys():            
+                lratings[count] = ratings[key]
+                count += 1
 
         return (ratings, items)
 
@@ -100,11 +103,10 @@ class Recommender(metaclass=abc.ABCMeta):
 
         return tuples
                 
-
     def prepare(self):
         assert self.ratings_path
         
-        log('Loading ratings...')
+        log('Loading ratings from {}...'.format(self.ratings_path))
         self.ratings, self.items = self._load_ratings(self.ratings_path)
 
         log('Calculating average ratings...')
@@ -117,57 +119,144 @@ class Recommender(metaclass=abc.ABCMeta):
         
     def test(self):
         assert self.ratings
-        assert self.sample_size
-        assert type(self.probe_set_path) == str
+        assert type(self.top_ratings_path) == str
+        assert type(self.top_n) == int and self.top_n > 0
+        assert type(self.test_sample_size) == int and self.test_sample_size > 0
 
-        #print(self.predict(15, 2699))
-        #return
+        log('Loading top ratings from {}...'.format(self.top_ratings_path))
+        top_ratings = self._load_tuples(self.top_ratings_path)
 
-        N = 10
-        T = 50
         hits = 0
-        self.sample_size = 100
+        cnt = 0
         
-        top_ratings = self._load_tuples(self.probe_set_path)
-        
-        for user, item in top_ratings[:T]:              
-            rated_items = list(self.ratings[user]) if user in self.ratings else []
-            unrated_items = sample_unrated_items(self.ratings,
-                                                 self.sample_size - 1,
-                                                 exclude=rated_items)
+        for user, top_item in top_ratings:            
+            rated_items = list(self.ratings.get(user, []))
+            
+            unrated_items = sample_unrated_items(
+                self.ratings,
+                self.test_sample_size - 1,
+                exclude=rated_items
+            )
 
-            sample_set =  [item] + unrated_items
-            #random.shuffle(sample_set)
             ratings = []
-            count = 0
+            sample_items = [top_item] + unrated_items
 
-            for it in sample_set:
-                count += 1
-                #print('iteration', count)
-                score = self.predict(user, it)[0]
-                if it == item:
-                    SCORE = score
-                ratings.append((it, score))
+            for item in sample_items:
+                ratings.append((item, self.predict(user, item)))
 
             ratings.sort(key=lambda k: k[1], reverse=True)
-            print([r for r in ratings[:N]])
-            print(len([r for r in ratings if r[1] == 5]))
-            ratings = [r[0] for r in ratings[:N]]
+            top_N = [r[0] for r in ratings[:self.top_n]]
             
-            
-            log('\n[user]: {}\n'
-                '[item]: {}\n'
-                '[score]: {}\n'
-                '[in top-N]: {}'.format(user, item, SCORE, item in ratings), 1)
+            if not self.silent:
+                log('\n'
+                    '[user]: {}\n'
+                    '[item]: {}\n'
+                    '[top-N]: {}\n'
+                    '[score]: {}'
+                    .format(user, top_item, top_item in top_N,
+                            self.predict(user, top_item)), 1)
 
-            hits += int(item in ratings)
+            if self.predict(user, top_item) == -1:
+                cnt += 1
+            hits += int(top_item in top_N)
 
-        print(hits, N, self.sample_size, hits / T)
+        log('Test results:', 0, 1)
+        log('[N]: {}\n'
+            '[hits]: {}\n'
+            '[test sample]: {}\n'
+            '[iterations]: {}\n'
+            '[recall]: {}'.format(hits,
+                                  self.top_n,
+                                  self.test_sample_size,
+                                  len(top_ratings),
+                                  hits / len(top_ratings)), 1)
+        print(cnt)
 
+    def _get_parser(self):
+        parser = argparse.ArgumentParser(
+            description='''[?]'''
+        )
 
-        
-#666
-#206
+        parser.add_argument(
+            'ratings_path',
+            type=str,
+            help='Path to ratings data, [<user> <item> <rating>] format.'
+        )
 
-#10/100: 0.34
-#10/500: 
+        parser.add_argument(
+            'top_ratings_path',
+            type=str,
+            help='Path to top ratings used in testing stage. '
+            'Same format as ratings_path.'
+        )
+
+        parser.add_argument(
+            'round_precision',
+            type=int,
+            help='Prediction rounding precision. '
+            '1 produces integers, 0.5 produces 0, 0.5, 1, 1.5, etc.'
+        )
+
+        parser.add_argument(
+            'top_n',
+            type=int,
+            help='N, number of top items to calculate recall.'
+        )
+
+        parser.add_argument(
+            '-min-raters',
+            type=int,
+            default=1,
+            help='Minimal acceptable number of raters used to make a prediction. '
+            'Value of k guarantees *at least* k raters. Defaults to 1.'
+        )
+
+        parser.add_argument(
+            '-linkage-method',
+            type=str,
+            default='average',
+            help='Clustering linkage method. Default: average.'
+        )
+
+        parser.add_argument(
+            '-linkage-metric',
+            type=str,
+            default='cosine',
+            help='Clustering linkage metric. Default: cosine.'
+        )
+
+        parser.add_argument(
+            '-test-sample-size',
+            type=int,
+            default=1000,
+            help='Test sample size. Default: 1000.'
+        )
+
+        parser.add_argument(
+            '-delimiter',
+            type=str,
+            default=' ',
+            help='Source data delimiter. Default is one whitespace.'
+        )
+
+        parser.add_argument(
+            '-silent',
+            type=bool,
+            default=False,
+            help='Turn verbosity on/off.'
+        )
+
+        return parser
+
+    def init(self, args):
+        self.ratings_path = args.ratings_path
+        self.top_ratings_path = args.top_ratings_path
+        self.round_precision = args.round_precision
+        self.top_n = args.top_n
+    
+        self.min_nraters = args.min_raters
+        self.test_sample_size = args.test_sample_size
+        self.linkage_method = args.linkage_method
+        self.linkage_metric = args.linkage_metric
+        self.delimiter = args.delimiter
+        self.silent = args.silent

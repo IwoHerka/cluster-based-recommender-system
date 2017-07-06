@@ -38,7 +38,7 @@ class SimilarityRecommender(Recommender):
         super(SimilarityRecommender, self).__init__()
 
         # https://docs.scipy.org/doc/scipy-0.19.0/reference/ \
-            # generated/scipy.cluster.hierarchy.linkage.html
+        # generated/scipy.cluster.hierarchy.linkage.html
         self.linkage_method = None
         self.linkage_metric = None
         
@@ -114,118 +114,30 @@ class SimilarityRecommender(Recommender):
                 if rater in self.ratings and item in self.ratings[rater]:
                     raters.append((rater, self.ratings[rater][item]))
 
-            if len(raters) >= self.min_nraters:
+            if raters and len(raters) >= self.min_nraters:
                 break
 
         average = self.avg_ratings.get(user, self.global_avg_rating)
         
         if not raters:
-            return (average, 0, 0, 0)
+            return average
         
         delta = 0.      
-        #vectors = (self.dokmat[user].toarray(),) \
-        #          + tuple([self.dokmat[r[0]].toarray() for r in raters])
-
-        # TODO: Don't calculate this over and over.
-        #concat = np.concatenate(vectors, axis=0)
-        #similarity = pdist(concat, self.linkage_metric)[:len(raters)]
-        weight_sum = len(raters)#max(sum(similarity), 0000.1)
+        weight_sum = len(raters)
         
         for i, (rater, rating) in enumerate(raters):
-            delta += 1  * (rating - self.avg_ratings[rater] * 1)
-            #delta += similarity[i]  * (rating - self.avg_ratings[rater] * 0.75)
+            delta += rating - self.avg_ratings[rater]
 
         wdelta = delta / weight_sum if weight_sum != 0 else delta
-        prediction = min(5, max(0, self._round(average + wdelta)))
 
-        if False:
-            print('u:i', user, item)
-            print('raters', raters)
-            print('avg ratings', [self.avg_ratings.get(u[0], -1) for u in raters])
-            print('similarity', similarity)
-            print('p/r', prediction, self.ratings[user][item] if user in self.ratings and item in self.ratings[user] else '-')
-            print('avg', average)
-            print('weight sum', weight_sum)
-            print('d/wd', delta, wdelta)
-
-            #raise Exception()
-        return (prediction, len(raters), 0, 0)
+        return min(5, max(0, self._round(average + wdelta)))
     
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description='''[?]'''
-    )
-    
-    parser.add_argument(
-        'r',
-        type=str,
-        help='Path to ratings data, [<user> <item> <rating>] format.'
-    )
-
-    parser.add_argument(
-        '-min-raters',
-        type=int,
-        default=1,
-        help='Minimal acceptable number of raters used to make a prediction. '
-        'Value of k guarantees *at least* k raters. Defaults to 1.'
-    )
-
-    parser.add_argument(
-        '-iter-limit',
-        type=int,
-        default=-1,
-        help='Minimal acceptable number of raters used to make a prediction. '
-        'Value of k guarantees *at least* k raters. Defaults to 1.'
-    )
-
-    parser.add_argument(
-        '-clusters',
-        type=str,
-        help='If specified, recommender will load cluster data from file.'
-    )
-
-    parser.add_argument(
-        '-linkage-method',
-        type=str,
-        default='average',
-        help='Linkage method'
-    )
-
-    parser.add_argument(
-        '-linkage-metric',
-        type=str,
-        default='cosine',
-        help='Linkage metric'
-    )
-
-    parser.add_argument(
-        '-test-sample-size',
-        type=int,
-        default=100,
-        help='Test sample size'
-    )
-
-    parser.add_argument(
-        '-delimiter',
-        type=str,
-        default='::',
-        help='Source data delimiter'
-    )
-    
-    args = parser.parse_args()
     recommender = SimilarityRecommender()
+    parser = recommender._get_parser()
+    args = parser.parse_args()
     
-    #recommender.ratings_path = args.r
-    recommender.min_nraters = args.min_raters
-    recommender.round_precision = 1
-    recommender.iter_limit = args.iter_limit
-    recommender.sample_size = args.test_sample_size
-    recommender.probe_set_path = './data/top.dat'
-    recommender.ratings_path = './data/training.dat'
-    recommender.linkage_method = args.linkage_method
-    recommender.linkage_metric = args.linkage_metric
-    recommender.delimiter = ' '
-    
+    recommender.init(args)
     recommender.prepare()
     recommender.test()
