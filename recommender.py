@@ -192,7 +192,7 @@ class Recommender(metaclass=abc.ABCMeta):
 
         parser.add_argument(
             'round_precision',
-            type=int,
+            type=float,
             help='Prediction rounding precision. '
             '1 produces integers, 0.5 produces 0, 0.5, 1, 1.5, etc.'
         )

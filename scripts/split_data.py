@@ -6,13 +6,12 @@ import time
 from random import sample
 from collections import defaultdict
 
-DIV = '::'
-SAMPLE_SIZE = 14000
-RATINGS = './data/ratings.dat'
+DIV = ' '
+SAMPLE_SIZE = 500
+RATINGS = './trust_data/ratings.txt'
 
-TRAINING = './data/training.dat'
-PROBE = './data/probe.dat'
-TOP = './data/top.dat'
+TRAINING = './trust_data/training.dat'
+TOP = './trust_data/top.dat'
 
 
 def load_ratings(path):
@@ -31,15 +30,15 @@ def load_ratings(path):
 
             ratings[user][item] = rating
 
-    count = 0
-    lratings = {}
+    #count = 0
+    #lratings = {}
 
     # Relabel keys: 0-N.
-    for key in ratings.keys():            
-        lratings[count] = ratings[key]
-        count += 1
+    #for key in ratings.keys():            
+    #    lratings[count] = ratings[key]
+    #    count += 1
 
-    return lratings
+    return ratings
 
 
 def sample_unrated_items(ratings, nsamples=1, exclude=[]):
@@ -79,11 +78,9 @@ probe_set = sorted(sample_unrated_items(ratings, SAMPLE_SIZE, []))
        
 
 with open(TOP, 'w') as top:
-    with open(PROBE, 'w') as probe:
-        for user, item, rating in probe_set:
-            probe.write('{} {} {}\n'.format(user, item, rating))
-            if rating == 5:
-                top.write('{} {} {}\n'.format(user, item, rating))
+    for user, item, rating in probe_set:
+        if rating == 4:
+            top.write('{} {} {}\n'.format(user, item, rating))
 
 
 with open(TRAINING, 'w') as training:
