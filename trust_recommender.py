@@ -2,6 +2,7 @@ import networkx as nx
 import igraph
 from girvan_newman import girvan_newman
 from fix_dendrogram import fix_dendrogram
+from collections import defaultdict
 
 # Compiled Infomap.
 from infomap import infomap
@@ -33,33 +34,46 @@ class TrustRecommender(Recommender):
                 
     def _cluster_users(self):
         assert self.trust_net
+
+        dendrogram = self.trust_net.community_edge_betweenness(10) #community_leading_eigenvector()
+        fix_dendrogram(self.trust_net, dendrogram)
+
+        self.user2cluster = defaultdict(str)
+        self.cluster2users = defaultdict(set)
+
+        for i in range(self.trust_net.vcount()):
+            cl = dendrogram.as_clustering(i + 1)
+            for i, c in enumerate(cl):
+                com_id = '{}:{}'.format(self.user2cluster[c[0]], i)
+                com_id = '0' if com_id == ':0' else com_id
+                
+                for u in c:
+                    self.user2cluster[u] = com_id
+                    self.cluster2users[com_id].add(u)
+
+
+        with open('./trust_data/user2clusters.dat', 'w') as out:
+            for u in self.user2cluster:
+                print(len(self.user2cluster[u]))
+                out.write('{}-'.format(u))
+                out.write(self.user2cluster[u])
+                out.write('\n')
+                
+        with open('./trust_data/cluster2users.dat', 'w') as out:
+            for c in self.cluster2users:
+                out.write('{}-'.format(c))
+                for u in self.cluster2users[c]:
+                    out.write('{}:'.format(u))
+                out.write('\n')
+                
+        self.trust_net = nx.read_edgelist(
+            self.trust_net_path,
+            create_using=nx.DiGraph(),
+            nodetype=int
+        )
         
-        user2cluster = {}
-        self.cluster2users = {}
-
-        #dendrogram = girvan_newman(self.trust_net)
-
-        #try:
-        #    while True:
-        #        part = [sorted(c) for c in next(dendrogram)]
-        #        print(part)
-        #except Exception:
-        #    pass
-        g = igraph.Graph()
-        g.add_vertices([i for i in range(10)])
-        g.add_edges([(0,1), (1, 2), (2, 3),(3, 4),(4, 5),(5,3)])
-        
-        print(g)
-
-        dendrogram = g.community_edge_betweenness() #community_leading_eigenvector()
-
-        print(dendrogram)
-
-        fix_dendrogram(g, dendrogram)
-
-        for i in range(10):
-            print(dendrogram.as_clustering(i + 1))
-                                            
+        return self.user2cluster
+                             
     
     def _com_queue(self, user):
         assert self.user2cluster
@@ -99,7 +113,7 @@ class TrustRecommender(Recommender):
         for com_id in com_queue:
             ratings = []
 
-            print(com_queue, com_id, len(self.cluster2users[com_id]))
+            #print(com_queue, com_id, len(self.cluster2users[com_id]))
             
             for rater in (r for r in self.cluster2users[com_id] if r != user):
                 if rater in self.ratings and item in self.ratings[rater]:
@@ -163,4 +177,4 @@ if __name__ == '__main__':
     recommender.trust_net_path = args.trust_net_path
     
     recommender.prepare()
-    #recommender.test()
+    recommender.test()

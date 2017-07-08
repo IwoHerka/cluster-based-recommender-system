@@ -126,6 +126,8 @@ class Recommender(metaclass=abc.ABCMeta):
         log('Loading top ratings from {}...'.format(self.top_ratings_path))
         top_ratings = self._load_tuples(self.top_ratings_path)
 
+        self.predict(7, 11)
+
         hits = 0
         cnt = 0
         
