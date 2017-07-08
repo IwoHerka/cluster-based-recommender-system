@@ -126,8 +126,6 @@ class Recommender(metaclass=abc.ABCMeta):
         log('Loading top ratings from {}...'.format(self.top_ratings_path))
         top_ratings = self._load_tuples(self.top_ratings_path)
 
-        self.predict(7, 11)
-
         hits = 0
         cnt = 0
         
@@ -154,8 +152,11 @@ class Recommender(metaclass=abc.ABCMeta):
                     '[user]: {}\n'
                     '[item]: {}\n'
                     '[top-N]: {}\n'
+                    #'[top ratings]: {}\n'
                     '[score]: {}'
-                    .format(user, top_item, top_item in top_N,
+                    .format(user, top_item,
+                            top_item in top_N,
+                            #ratings[:self.top_n],
                             self.predict(user, top_item)), 1)
 
             if self.predict(user, top_item) == -1:

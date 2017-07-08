@@ -35,51 +35,39 @@ class TrustRecommender(Recommender):
     def _cluster_users(self):
         assert self.trust_net
 
-        dendrogram = self.trust_net.community_edge_betweenness(10) #community_leading_eigenvector()
-        fix_dendrogram(self.trust_net, dendrogram)
-
-        self.user2cluster = defaultdict(str)
+        self.user2cluster = {}
         self.cluster2users = defaultdict(set)
+        part = self.trust_net.community_infomap()
 
-        for i in range(self.trust_net.vcount()):
-            cl = dendrogram.as_clustering(i + 1)
-            for i, c in enumerate(cl):
-                com_id = '{}:{}'.format(self.user2cluster[c[0]], i)
-                com_id = '0' if com_id == ':0' else com_id
-                
-                for u in c:
-                    self.user2cluster[u] = com_id
-                    self.cluster2users[com_id].add(u)
-
-
-        with open('./trust_data/user2clusters.dat', 'w') as out:
-            for u in self.user2cluster:
-                print(len(self.user2cluster[u]))
-                out.write('{}-'.format(u))
-                out.write(self.user2cluster[u])
-                out.write('\n')
-                
-        with open('./trust_data/cluster2users.dat', 'w') as out:
-            for c in self.cluster2users:
-                out.write('{}-'.format(c))
-                for u in self.cluster2users[c]:
-                    out.write('{}:'.format(u))
-                out.write('\n')
-                
+        for i, com in enumerate(part):
+            com_id = '0:{}'.format(str(i))
+            for user in com:
+                self.user2cluster[user] = com_id
+                self.cluster2users[com_id].add(user)
+                    
         self.trust_net = nx.read_edgelist(
             self.trust_net_path,
             create_using=nx.DiGraph(),
             nodetype=int
         )
-        
+
+        max_user = max(self.trust_net.nodes())
+
+        for user in range(max_user):
+            self.trust_net.add_node(user)
+
+        self.cluster2users['0'] = set(self.trust_net.nodes())       
         return self.user2cluster
                              
-    
     def _com_queue(self, user):
         assert self.user2cluster
         assert user in self.user2cluster
         
         com_id = self.user2cluster[user]
+
+        if not ':' in com_id:
+            return [com_id]
+        
         com_queue = []
         
         while True:
@@ -104,16 +92,13 @@ class TrustRecommender(Recommender):
         
         delta = 0
         weights = []
-        path_lengths = []
-        paths_from_user = None
+        path_les_from_user = None
         weight_sum = 0.00000001
         com_queue = self._com_queue(user)
         avg_rating = self.avg_ratings.get(user, self.global_avg_rating)
 
         for com_id in com_queue:
             ratings = []
-
-            #print(com_queue, com_id, len(self.cluster2users[com_id]))
             
             for rater in (r for r in self.cluster2users[com_id] if r != user):
                 if rater in self.ratings and item in self.ratings[rater]:
@@ -131,13 +116,15 @@ class TrustRecommender(Recommender):
                 break
 
         if not ratings:
-            return -1 #self._round(avg_rating)
+            return self._round(avg_rating)
 
         if len(ratings) == 1:
             delta = ratings[0][1] - self.avg_ratings[ratings[0][0]]
-            return self._round(avg_rating + delta)
+            return min(self.max_rating, self.min_rating(0, self._round(avg_rating + delta)))
         
         assert paths_from_user
+
+        path_lengths = []
             
         for rater, rating in ratings:
             if rater in paths_from_user:
@@ -157,7 +144,7 @@ class TrustRecommender(Recommender):
             delta += change
             i += 1
 
-        return min(5, max(0, self._round(avg_rating + delta)))
+        return min(4, max(0, self._round(avg_rating + delta)))
     
 
 if __name__ == '__main__':
