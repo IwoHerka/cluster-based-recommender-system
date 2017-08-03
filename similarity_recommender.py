@@ -15,22 +15,25 @@ class cluster:
         self.parent = None
         self.children = set([])
 
-    @property
     def nodes(self, except_for=None):
-        nodes = set()
+        nodes = []       
 
         if self.children:
             for child in self.children:
                 if except_for == child:
                     continue
 
-                nodes = nodes.union(child.nodes)
-            return nodes
-        
-        return set([self.id])
+                nodes += cluster_nodes.get(child.id, child.nodes())
 
+            cluster_nodes[self.id] = nodes
+            return nodes
+
+        nodes = [self.id]
+        cluster_nodes[self.id] = nodes
+        return nodes
+        
     def __repr__(self):
-        return str([c.id for c in self.children])
+        return str(self.id) + ": " + str([c.id for c in self.children])
 
     
 class SimilarityRecommender(Recommender):
@@ -41,6 +44,9 @@ class SimilarityRecommender(Recommender):
         # generated/scipy.cluster.hierarchy.linkage.html
         self.linkage_method = None
         self.linkage_metric = None
+        self.user2dendrogram = {}
+        global cluster_nodes
+        cluster_nodes = {}
         
     def _cluster_users(self):
         assert self.linkage_method
@@ -50,6 +56,7 @@ class SimilarityRecommender(Recommender):
 
         clusters = {}
         nrows, ncols = len(self.ratings), max(self.items) + 1
+        print(nrows, max(self.ratings))
         self.dokmat = dok_matrix((nrows, ncols), dtype=np.float32)
 
         for user in self.ratings:
@@ -60,7 +67,7 @@ class SimilarityRecommender(Recommender):
         linkage = hierarchy.linkage(self.dokmat.toarray(),
                                     method=self.linkage_method,
                                     metric=self.linkage_metric)
-        
+
         for ind, row in enumerate(linkage):
             for i in range(2):
                 rid = int(row[i])
@@ -87,6 +94,9 @@ class SimilarityRecommender(Recommender):
         return clusters
 
     def _com_queue(self, user):
+        if user in self.user2dendrogram:
+            return self.user2dendrogram[user]
+        
         assert self.user2cluster
         com = self.user2cluster[user]
         queue = [com]
@@ -95,42 +105,63 @@ class SimilarityRecommender(Recommender):
             queue.append(com.parent)
             com = com.parent
 
+        self.user2dendrogram[user] = queue    
         return queue
 
     def _com2nodes(self, com):
-        return com.nodes
-    
+        return cluster_nodes.get(com.id, com.nodes())
+                
+    #@profile
     def predict(self, user, item):
         assert self.ratings
         assert self.min_nraters
         assert self.avg_ratings
         
         com_queue = self._com_queue(user)
-        
-        for com in com_queue:
-            raters = []
+        rater_count = 0
+        count = 0
+
+        #print(len(cluster_nodes))
+        #print(com_queue)
+        try:
+            for i, com in enumerate(com_queue):
+                #print(com.nodes)
+                raters = []
+                prev = com_queue[i-1] if i > 0 else None
+                nodes = cluster_nodes.get(com.id, com.nodes(except_for=prev))
+                #print('l', len(nodes))
+
+                for rater in [v for v in nodes if v != user]:
+                    count += 1
+
+                    if rater in self.ratings and item in self.ratings[rater]:
+                        raters.append((rater, self.ratings[rater][item]))
+                        rater_count += 1
+
+                    if rater_count >= self.min_nraters:
+                        raise Exception()
+                    
+        except Exception:
+            pass
             
-            for rater in [v for v in self._com2nodes(com) if v != user]:
-                if rater in self.ratings and item in self.ratings[rater]:
-                    raters.append((rater, self.ratings[rater][item]))
-
-            if raters and len(raters) >= self.min_nraters:
-                break
-
+        #print(len(raters))
         average = self.avg_ratings.get(user, self.global_avg_rating)
+        #print(1, average)
         
         if not raters:
             return average
         
         delta = 0.      
         weight_sum = len(raters)
+
+        #print(raters)
         
         for i, (rater, rating) in enumerate(raters):
             delta += rating - self.avg_ratings[rater]
 
         wdelta = delta / weight_sum if weight_sum != 0 else delta
 
-        return min(5, max(0, self._round(average + wdelta)))
+        return min(self.max_rating, max(self.min_rating, self._round(average + wdelta)))
     
 
 if __name__ == '__main__':

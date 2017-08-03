@@ -1,0 +1,57 @@
+  Trust
+  
+  [N]: 5
+  [hits]: 33
+  [test sample]: 1000
+  [iterations]: 151
+  [recall]: 0.2185430463576159
+
+  [N]: 10
+  [hits]: 33
+  [test sample]: 1000
+  [iterations]: 151
+  [recall]: 0.2185430463576159
+
+  [N]: 1
+  [hits]: 33
+  [test sample]: 1000
+  [iterations]: 151
+  [recall]: 0.2185430463576159
+
+  Similarity 1
+
+  [N]: 10
+  [hits]: 1401
+  [test sample]: 1000
+  [iterations]: 3767
+  [recall]: 0.37191398991239716
+
+  [N]: 5
+  [hits]: 1383
+  [test sample]: 1000
+  [iterations]: 3767
+  [recall]: 0.36713565171223783
+
+  [N]: 20
+  [hits]: 1444
+  [test sample]: 1000
+  [iterations]: 3767
+  [recall]: 0.383328908946111
+
+  [N]: 15
+  [hits]: 1424
+  [test sample]: 1000
+  [iterations]: 3767
+  [recall]: 0.3780196442792673
+
+  Similarity 0.5
+
+  [N]: 10
+  [hits]: 58
+  [test sample]: 1000
+  [iterations]: 142
+  [recall]: 0.4084507042253521
+
+
+0.1 1 - 19
+0.5 1 - 30

@@ -71,17 +71,21 @@ class Recommender(metaclass=abc.ABCMeta):
         ratings = defaultdict(lambda: {})
         items = set([])
 
+        maxusr = -1
         with open(path, 'r') as data:
             for line in data.readlines():
                 line = [e for e in line.rstrip().split(self.delimiter)]
                 
                 user = int(line[0])
+                maxusr = max(user, maxusr)
                 item = int(line[1])
                 rating = float(line[2])
                 
                 items.add(item)
                 ratings[user][item] = rating
 
+        #print(maxusr)
+        
         if relabel:
             count = 0
             lratings = {}
@@ -128,6 +132,9 @@ class Recommender(metaclass=abc.ABCMeta):
 
         hits = 0
         cnt = 0
+
+        #print(self.predict(2, 41))
+        #return
         
         for user, top_item in top_ratings:            
             rated_items = list(self.ratings.get(user, []))
@@ -138,14 +145,19 @@ class Recommender(metaclass=abc.ABCMeta):
                 exclude=rated_items
             )
 
+            #print(len(unrated_items))
+            #break
+
             ratings = []
             sample_items = [top_item] + unrated_items
+            #random.shuffle(sample_items)
 
             for item in sample_items:
                 ratings.append((item, self.predict(user, item)))
 
             ratings.sort(key=lambda k: k[1], reverse=True)
             top_N = [r[0] for r in ratings[:self.top_n]]
+            #print(ratings[:self.top_n])
             
             if not self.silent:
                 log('\n'
@@ -168,8 +180,8 @@ class Recommender(metaclass=abc.ABCMeta):
             '[hits]: {}\n'
             '[test sample]: {}\n'
             '[iterations]: {}\n'
-            '[recall]: {}'.format(hits,
-                                  self.top_n,
+            '[recall]: {}'.format(self.top_n,
+                                  hits,
                                   self.test_sample_size,
                                   len(top_ratings),
                                   hits / len(top_ratings)), 1)
@@ -204,6 +216,20 @@ class Recommender(metaclass=abc.ABCMeta):
             'top_n',
             type=int,
             help='N, number of top items to calculate recall.'
+        )
+
+        parser.add_argument(
+            '-min-rating',
+            type=int,
+            default=1,
+            help='Minimal possible rating'
+        )
+            
+        parser.add_argument(
+            '-max-rating',
+            type=int,
+            default=5,
+            help='Maximal possible rating'
         )
 
         parser.add_argument(
@@ -256,8 +282,11 @@ class Recommender(metaclass=abc.ABCMeta):
         self.top_ratings_path = args.top_ratings_path
         self.round_precision = args.round_precision
         self.top_n = args.top_n
-    
+
+        self.min_rating = args.min_rating
+        self.max_rating = args.max_rating
         self.min_nraters = args.min_raters
+        print(self.min_nraters)
         self.test_sample_size = args.test_sample_size
         self.linkage_method = args.linkage_method
         self.linkage_metric = args.linkage_metric

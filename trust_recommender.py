@@ -31,34 +31,60 @@ class TrustRecommender(Recommender):
         self.trust_net = igraph.Graph.Read_Edgelist(self.trust_net_path, directed=True)
         
         super(TrustRecommender, self).prepare()
-                
+        
     def _cluster_users(self):
         assert self.trust_net
 
         self.user2cluster = {}
         self.cluster2users = defaultdict(set)
-        part = self.trust_net.community_infomap()
+        part = self.trust_net.community_walktrap()
 
-        for i, com in enumerate(part):
-            com_id = '0:{}'.format(str(i))
-            for user in com:
-                self.user2cluster[user] = com_id
-                self.cluster2users[com_id].add(user)
-                    
-        self.trust_net = nx.read_edgelist(
+        trust_net = nx.read_edgelist(
             self.trust_net_path,
             create_using=nx.DiGraph(),
             nodetype=int
         )
 
-        max_user = max(self.trust_net.nodes())
+        
+        self.xyz(self.trust_net, trust_net.nodes(), '0')
 
+        # for i, com in enumerate(part):
+        #    com_id = '0:{}'.format(str(i))
+        #    for user in com:
+        #        self.user2cluster[user] = com_id
+        #        self.cluster2users[com_id].add(user)
+        #            
+        self.trust_net = trust_net
+
+        max_user = max(self.trust_net.nodes())
+        
         for user in range(max_user):
             self.trust_net.add_node(user)
-
+        
         self.cluster2users['0'] = set(self.trust_net.nodes())       
         return self.user2cluster
-                             
+
+    def xyz(self, net, scom, prefix):
+        subgraph = net.subgraph(scom)
+        subpart = subgraph.community_infomap()
+
+        
+        for j, c in enumerate(subpart):
+            #print(j)
+            com_id = '{}:{}'.format(prefix, j)
+
+            #print(c)
+            for u in c:
+                usr = scom[u]
+                #if len(c) > 1:
+                #    print(usr, com_id)
+                self.user2cluster[usr] = com_id
+                self.cluster2users[com_id].add(usr)
+            
+            if len(c) > 1 and len(c) != len(scom):
+                #print(len(c))
+                self.xyz(subgraph, c, com_id)
+                
     def _com_queue(self, user):
         assert self.user2cluster
         assert user in self.user2cluster
@@ -97,10 +123,13 @@ class TrustRecommender(Recommender):
         com_queue = self._com_queue(user)
         avg_rating = self.avg_ratings.get(user, self.global_avg_rating)
 
+        count = 0
+        print(len(com_queue))
         for com_id in com_queue:
             ratings = []
             
             for rater in (r for r in self.cluster2users[com_id] if r != user):
+                count += 1
                 if rater in self.ratings and item in self.ratings[rater]:
                     ratings.append((rater, self.ratings[rater][item]))
 
@@ -115,17 +144,18 @@ class TrustRecommender(Recommender):
                 paths_from_user = self.shortest_paths[com_id][user]
                 break
 
+        #print(count)
         if not ratings:
             return self._round(avg_rating)
 
         if len(ratings) == 1:
             delta = ratings[0][1] - self.avg_ratings[ratings[0][0]]
-            return min(self.max_rating, self.min_rating(0, self._round(avg_rating + delta)))
+            return min(self.max_rating, max(self.min_rating, self._round(avg_rating + delta)))
         
         assert paths_from_user
 
         path_lengths = []
-            
+        
         for rater, rating in ratings:
             if rater in paths_from_user:
                 path_lengths.append(len(paths_from_user[rater]) - 1)
@@ -144,7 +174,8 @@ class TrustRecommender(Recommender):
             delta += change
             i += 1
 
-        return min(4, max(0, self._round(avg_rating + delta)))
+        #print(avg_rating, delta)
+        return min(self.max_rating, max(self.min_rating, self._round(avg_rating + delta)))
     
 
 if __name__ == '__main__':
@@ -160,6 +191,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     recommender.init(args)
+
+    print(args)
 
     recommender.trust_net_path = args.trust_net_path
     
